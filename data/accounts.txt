@@ -1,0 +1,5 @@
+# USERNAME|FULL NAME|EMAIL|PASSWORD HASH|ROLE|MEMBERSHIP
+admin|System Admin|admin@store.com|pbkdf2$210000$8nAI7l1EwKkWu5Vk3rzaDw==$XrjSrpMr3jfapRKTzMk+ySVIjOjK1jzNz73YI11j8z0=|ADMIN|REGULAR
+alex|Alex R. Reyes|alex@email.com|pbkdf2$210000$/HsG+nGbQvDP5pG+4pCTzg==$oT48kdakYzoa3B9AjeTrtD+S6Baw5Q22Xy1x01NkyxU=|CLIENT|VIP
+juan|Juan D. Cruz|juan@email.com|pbkdf2$210000$Ftn5LRnLNIEWOjptWVwAXA==$F0gxOmf7Lpn5mgxJKnlFiPRNT6xShhKshE18akZq9sg=|CLIENT|REGULAR
+OnezPH|Onez P. H|Onez@gmail.com|pbkdf2$210000$VDHChtuTU/drUZCKaMcYag==$h4IJYBKypEc6kZZmMj3963E3mhZXeZiutO/b/Fqac4w=|CLIENT|REGULAR

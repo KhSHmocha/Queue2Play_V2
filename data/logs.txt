@@ -1,0 +1,25 @@
+# TIMESTAMP|TYPE|ACTION
+2026-10-08 21:02:53|EVENT|Registered account: OnezPH
+2026-10-08 21:03:22|EVENT|Login: OnezPH (CLIENT)
+2026-10-08 22:32:05|EVENT|Login: admin (ADMIN)
+2026-10-08 22:39:53|ADMIN|Added game: test (Xbox)
+2026-10-08 22:51:50|EVENT|Failed login attempt for account: admin@strore.com
+2026-10-08 22:52:23|EVENT|Login: admin (ADMIN)
+2026-10-08 23:06:45|EVENT|Login: admin (ADMIN)
+2026-10-08 23:32:06|EVENT|Login: admin (ADMIN)
+2026-10-10 15:41:39|EVENT|Login: juan (CLIENT)
+2026-10-10 15:43:25|EVENT|Queue request #001: juan - Spider-Man 2 x1 (1 day(s))
+2026-10-10 15:44:56|EVENT|Queue request #002: juan - Minecraft x5 (1 day(s))
+2026-10-10 15:44:56|EVENT|Queue request #003: juan - Forza Horizon 5 x1 (1 day(s))
+2026-10-10 15:46:26|EVENT|Incorrect password attempt for: alex
+2026-10-10 15:46:30|EVENT|Login: alex (CLIENT)
+2026-10-10 15:47:01|EVENT|Queue request #004: alex - Spider-Man 2 x2 (1 day(s))
+2026-10-10 15:47:01|EVENT|Queue request #005: alex - Minecraft x1 (1 day(s))
+2026-10-10 15:48:59|EVENT|Queue request #006: alex - Animal Crossing x1 (1 day(s))
+2026-10-10 15:48:59|EVENT|Queue request #007: alex - Forza Horizon 5 x1 (1 day(s))
+2026-10-10 15:49:40|EVENT|Login: admin (ADMIN)
+2026-10-10 15:51:11|ADMIN|Processed checkout: alex - Spider-Man 2 x2
+2026-10-10 15:51:18|ADMIN|Processed checkout: alex - Minecraft x1
+2026-10-10 15:51:23|ADMIN|Processed checkout: alex - Animal Crossing x1
+2026-10-10 15:51:38|ADMIN|Processed checkout: juan - Forza Horizon 5 x1
+2026-10-10 15:51:50|ADMIN|Processed checkout: alex - Forza Horizon 5 x1
