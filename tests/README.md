@@ -8,6 +8,25 @@ javac -encoding UTF-8 -d $testBuild $sources tests/BehaviorRegressionTest.java
 java "-Djava.io.tmpdir=$testBuild" -cp $testBuild BehaviorRegressionTest
 ```
 
+Responsive list and discard-confirmation checks:
+
+```powershell
+java "-Djava.io.tmpdir=$testBuild" -cp $testBuild BehaviorRegressionTest responsive
+```
+
+These checks cover height-based catalog and audit pages, complete wrapped records,
+narrow columns, centered helpers, usable pagination keys, admin/customer queue
+page navigation, and preserving game, stock, cart and registration drafts after No.
+The full suite includes these checks. No production data is used.
+
+`run.ps1` passes the console's window height and width to Java. Without the launcher,
+Java uses `LINES`/`COLUMNS` when provided, otherwise 50 rows/120 columns.
+Use `-Dq2p.height=36 -Dq2p.width=80` to specify a terminal size explicitly.
+Pages reserve space for headings, status, table headings, choices, helpers and prompt.
+Catalog pages contain at most nine games. Narrow tables wrap in smaller columns;
+below 60 columns records use an indented continuation layout to remain readable.
+An individual record taller than the space available stays together on its own page.
+
 Add Game editing/category checks can also run on their own:
 
 ```powershell
@@ -61,7 +80,7 @@ clearing, and plain output at 120, 81, 60, and 40 columns. To run only layout
 checks without saving transaction files, append `layout` to the Java command:
 
 ```powershell
-java "-Djava.io.tmpdir=$testBuild" -Dq2p.ascii=true -Dq2p.color=false -cp $testBuild BehaviorRegressionTest layout
+java "-Djava.io.tmpdir=$testBuild" "-Dq2p.ascii=true" "-Dq2p.color=false" -cp $testBuild BehaviorRegressionTest layout
 ```
 
 Navigation tests also cover empty screens staying visible until a named Back or
@@ -94,6 +113,15 @@ and Account Created. They check M Dashboard/Main Menu, invalid keys without
 result redraws, and B Return List only when rentals remain. Older transaction
 tests mock this new result-navigation step so their business-rule inputs remain
 focused on the transaction; the dedicated checks provide its scripted input.
+
+Back, Main Menu, Dashboard and pagination navigation options are white.
+Destructive actions (Logout, Cancel, Exit, Delete, Remove and Discard) are red.
+Positive confirmation actions are green. Regular options have bold mustard
+(#D4A017) bracketed keys and white labels; colors follow the label rather than
+the shortcut, so Receipt and Remove do not share a destructive style.
+Browse All Games labels stay violet, platform labels keep blue/green/red, and
+Yes/No labels retain green/red. Helpers, borders, separators, prompts and status
+colors are unchanged.
 
 Login tests check attempt numbers, remaining attempts, and all countdown values
 from 30 to zero. Scripted countdown tests verify carriage-return updates and mock

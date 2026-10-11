@@ -28,7 +28,7 @@ public class GameRentalSystem {
     static final DateTimeFormatter LOG_DISPLAY_DATE = DateTimeFormatter.ofPattern("MMM dd, yyyy");
     static final DateTimeFormatter LOG_DISPLAY_TIME = DateTimeFormatter.ofPattern("hh:mm a");
     static final int GAME_PAGE_SIZE = 9;
-    static final int DETAIL_PAGE_SIZE = 3;
+    static final int DETAIL_PAGE_SIZE = 9;
     static final int LOG_PAGE_SIZE = 9;
 
     // ---------- Data structures ----------
@@ -212,9 +212,11 @@ public class GameRentalSystem {
 
         while (true) {
             ArrayList<Game> list = gameCatalog.getDisplayList(platformGames, keyword, sortOption);
-            int totalPages = Math.max(1, (list.size() + GAME_PAGE_SIZE - 1) / GAME_PAGE_SIZE);
-            int start = page * GAME_PAGE_SIZE;
-            int end = Math.min(start + GAME_PAGE_SIZE, list.size());
+            ArrayList<Integer> starts = ui.gamePages(list);
+            int totalPages = starts.size() - 1;
+            page = Math.min(page, totalPages - 1);
+            int start = starts.get(page);
+            int end = starts.get(page + 1);
 
             String heading = title;
             if (client != null) {
@@ -762,18 +764,21 @@ public class GameRentalSystem {
                 ui.showNavigationOptions(ConsoleUI.EDIT_ORDER_TABLE_WIDTH, new String[] {"[B] Edit Order", "[M] Discard Cart / Dashboard"});
                 ui.inputBar("LINE NUMBER", ConsoleUI.EDIT_ORDER_TABLE_WIDTH);
                 String removeInput = ui.readText(ui.prompt(ConsoleUI.EDIT_ORDER_TABLE_WIDTH));
-                if (removeInput.equalsIgnoreCase("C")) {
-                    if (ui.askYesNo("Cancel this rental transaction and discard the cart?")) {
-                        return NAV_CANCEL;
+                while (removeInput.equalsIgnoreCase("C") || removeInput.equalsIgnoreCase("M")) {
+                    if (removeInput.equalsIgnoreCase("C")) {
+                        if (ui.askYesNo("Cancel this rental transaction and discard the cart?")) {
+                            return NAV_CANCEL;
+                        }
+                    } else {
+                        if (ui.confirmDiscardCart()) {
+                            requestDashboardReturn();
+                            return NAV_MAIN_MENU;
+                        }
                     }
-                    continue;
-                }
-                if (removeInput.equalsIgnoreCase("M")) {
-                    if (ui.confirmDiscardCart()) {
-                        requestDashboardReturn();
-                        return NAV_MAIN_MENU;
-                    }
-                    continue;
+                    ui.showNavigationOptions(ConsoleUI.EDIT_ORDER_TABLE_WIDTH,
+                        new String[] {"[B] Edit Order", "[M] Discard Cart / Dashboard"});
+                    ui.inputBar("LINE NUMBER", ConsoleUI.EDIT_ORDER_TABLE_WIDTH);
+                    removeInput = ui.readText(ui.prompt(ConsoleUI.EDIT_ORDER_TABLE_WIDTH));
                 }
                 try {
                     int number = parseMenuChoice(removeInput);
@@ -913,6 +918,7 @@ public class GameRentalSystem {
     }
     void cancelMyRequest(User client) {
         boolean choosingRequest = false;
+        int page = 0;
         while (true) {
             ArrayList<RentalRequest> myRequests = checkoutQueue.getRequestsOf(client);
             if (myRequests.isEmpty()) {
@@ -923,18 +929,39 @@ public class GameRentalSystem {
             }
 
             ui.printHeader("CLIENT > QUEUE REQUESTS", "MY QUEUE REQUESTS", ConsoleUI.QUEUE_TABLE_WIDTH);
-            ui.showQueueRequestHeader();
             ArrayList<RentalRequest> ready = checkoutQueue.previewReadyRequests();
+            ArrayList<RentalRequest> displayed = new ArrayList<>();
             for (RentalRequest request : checkoutQueue.getDisplayRequests(ready)) {
                 if (myRequests.contains(request)) {
-                    ui.showQueueRequestRow(ready.indexOf(request) + 1, request);
+                    displayed.add(request);
                 }
             }
+            ArrayList<Integer> starts = ui.queuePages(displayed);
+            int pages = starts.size() - 1;
+            page = Math.min(page, pages - 1);
+            int start = starts.get(page);
+            int end = starts.get(page + 1);
+            ui.showListStatus("Processing positions · Page: " + (page + 1) + "/" + pages,
+                "Showing " + (start + 1) + "-" + end + " of " + displayed.size(), ConsoleUI.QUEUE_TABLE_WIDTH);
+            ui.showQueueRequestHeader();
+            for (int i = start; i < end; i++) {
+                RentalRequest request = displayed.get(i);
+                ui.showQueueRequestRow(ready.indexOf(request) + 1, request);
+            }
             ui.info(ui.tableLine(ConsoleUI.QUEUE_TABLE_WIDTH));
+            ui.showPagination(page, pages);
 
             if (!choosingRequest) {
                 ui.showQueueCancellationOptions();
                 String choice = ui.readText(ui.prompt(ConsoleUI.QUEUE_TABLE_WIDTH));
+                if (choice.equalsIgnoreCase("N") && page < pages - 1) {
+                    page++;
+                    continue;
+                }
+                if (choice.equalsIgnoreCase("P") && page > 0) {
+                    page--;
+                    continue;
+                }
                 if (choice.equalsIgnoreCase("M")) {
                     requestDashboardReturn();
                     return;
@@ -953,6 +980,14 @@ public class GameRentalSystem {
             ui.showNavigationOptions(ConsoleUI.QUEUE_TABLE_WIDTH, new String[] {"[B] My Requests", "[M] Dashboard"});
             ui.inputBar("QUEUE NUMBER TO CANCEL", ConsoleUI.QUEUE_TABLE_WIDTH);
             String input = ui.readText(ui.prompt(ConsoleUI.QUEUE_TABLE_WIDTH));
+            if (input.equalsIgnoreCase("N") && page < pages - 1) {
+                page++;
+                continue;
+            }
+            if (input.equalsIgnoreCase("P") && page > 0) {
+                page--;
+                continue;
+            }
             if (input.equalsIgnoreCase("M")) {
                 requestDashboardReturn();
                 return;
@@ -1012,11 +1047,14 @@ public class GameRentalSystem {
         }
 
         int page = 0;
-        int totalPages = (history.size() + DETAIL_PAGE_SIZE - 1) / DETAIL_PAGE_SIZE;
+        ArrayList<Integer> starts = ui.rentalPages(history, "history");
+        int totalPages = starts.size() - 1;
         while (true) {
-            int start = page * DETAIL_PAGE_SIZE;
-            int end = Math.min(start + DETAIL_PAGE_SIZE, history.size());
+            int start = starts.get(page);
+            int end = starts.get(page + 1);
             ui.printHeader("RENTAL HISTORY (Most Recent First)", ConsoleUI.HISTORY_TABLE_WIDTH);
+            ui.showListStatus("Most recent first · Page: " + (page + 1) + "/" + totalPages,
+                "Showing " + (start + 1) + "-" + end + " of " + history.size(), ConsoleUI.HISTORY_TABLE_WIDTH);
             ui.showHistoryTableHeader(history.size(), start, end);
 
             for (int i = start; i < end; i++) {
@@ -1025,12 +1063,7 @@ public class GameRentalSystem {
             }
             ui.info(ui.tableLine(ConsoleUI.HISTORY_TABLE_WIDTH));
 
-            if (page < totalPages - 1) {
-                ui.info("[N] Next Page");
-            }
-            if (page > 0) {
-                ui.info("[P] Previous Page");
-            }
+            ui.showPagination(page, totalPages);
             ui.showBackToDashboard();
             ui.inputBar("ENTER CHOICE", ConsoleUI.HISTORY_TABLE_WIDTH);
             String choice = ui.readText(ui.prompt(ConsoleUI.HISTORY_TABLE_WIDTH));
@@ -1201,6 +1234,10 @@ public class GameRentalSystem {
                 return;
             }
             if (choice.equalsIgnoreCase("V")) {
+                ui.showCheckoutQueue(checkoutQueue, rentalService);
+                continue;
+            }
+            if (ui.moveCheckoutPage(choice)) {
                 ui.showCheckoutQueue(checkoutQueue, rentalService);
                 continue;
             }
@@ -1388,7 +1425,6 @@ public class GameRentalSystem {
 
     ArrayList<Rental> selectActiveRentalsForReturn() {
         int page = 0;
-        int pageSize = 9;
         String keyword = "";
         while (true) {
             if (activeRentals.isEmpty()) {
@@ -1398,10 +1434,11 @@ public class GameRentalSystem {
                 return null;
             }
             ArrayList<Rental> rentals = searchReturnRentals(keyword);
-            int totalPages = Math.max(1, (rentals.size() + pageSize - 1) / pageSize);
+            ArrayList<Integer> starts = ui.rentalPages(rentals, "return");
+            int totalPages = starts.size() - 1;
             page = Math.min(page, totalPages - 1);
-            int start = page * pageSize;
-            int end = Math.min(start + pageSize, rentals.size());
+            int start = starts.get(page);
+            int end = starts.get(page + 1);
             ui.showReturnSelectionList(rentals, start, end, page, totalPages, keyword);
             String choice = ui.readText(ui.prompt(ConsoleUI.RETURN_TABLE_WIDTH)).trim();
             if ((choice.equalsIgnoreCase("B") || choice.equals("0"))) {
@@ -1501,11 +1538,14 @@ public class GameRentalSystem {
         }
 
         int page = 0;
-        int totalPages = (rentals.size() + DETAIL_PAGE_SIZE - 1) / DETAIL_PAGE_SIZE;
+        ArrayList<Integer> starts = ui.rentalPages(rentals, "active");
+        int totalPages = starts.size() - 1;
         while (true) {
-            int start = page * DETAIL_PAGE_SIZE;
-            int end = Math.min(start + DETAIL_PAGE_SIZE, rentals.size());
+            int start = starts.get(page);
+            int end = starts.get(page + 1);
             ui.printHeader("ACTIVE RENTALS - Earliest Due Date First", ConsoleUI.ACTIVE_TABLE_WIDTH);
+            ui.showListStatus("Earliest due date first · Page: " + (page + 1) + "/" + totalPages,
+                "Showing " + (start + 1) + "-" + end + " of " + rentals.size(), ConsoleUI.ACTIVE_TABLE_WIDTH);
             ui.showActiveRentalHeader(rentals.size(), start, end);
 
             for (int i = start; i < end; i++) {
@@ -1514,12 +1554,7 @@ public class GameRentalSystem {
             }
             ui.info(ui.tableLine(ConsoleUI.ACTIVE_TABLE_WIDTH));
 
-            if (page < totalPages - 1) {
-                ui.info("[N] Next Page");
-            }
-            if (page > 0) {
-                ui.info("[P] Previous Page");
-            }
+            ui.showPagination(page, totalPages);
             ui.showNavigationOptions(new String[] {"[B] Active Rentals", "[M] Dashboard"});
             ui.inputBar("ENTER CHOICE", ConsoleUI.ACTIVE_TABLE_WIDTH);
             String choice = ui.readText(ui.prompt(ConsoleUI.ACTIVE_TABLE_WIDTH));
@@ -1556,11 +1591,14 @@ public class GameRentalSystem {
         }
 
         int page = 0;
-        int totalPages = (rentals.size() + DETAIL_PAGE_SIZE - 1) / DETAIL_PAGE_SIZE;
+        ArrayList<Integer> starts = ui.rentalPages(rentals, "overdue");
+        int totalPages = starts.size() - 1;
         while (true) {
-            int start = page * DETAIL_PAGE_SIZE;
-            int end = Math.min(start + DETAIL_PAGE_SIZE, rentals.size());
+            int start = starts.get(page);
+            int end = starts.get(page + 1);
             ui.printHeader("OVERDUE RENTALS - Earliest Due Date First", ConsoleUI.OVERDUE_TABLE_WIDTH);
+            ui.showListStatus("Earliest due date first · Page: " + (page + 1) + "/" + totalPages,
+                "Showing " + (start + 1) + "-" + end + " of " + rentals.size(), ConsoleUI.OVERDUE_TABLE_WIDTH);
             ui.showOverdueRentalHeader(rentals.size(), start, end);
 
             for (int i = start; i < end; i++) {
@@ -1572,12 +1610,7 @@ public class GameRentalSystem {
 
             Rental top = rentals.get(0);
             ui.showEarliestDueRental(top);
-            if (page < totalPages - 1) {
-                ui.info("[N] Next Page");
-            }
-            if (page > 0) {
-                ui.info("[P] Previous Page");
-            }
+            ui.showPagination(page, totalPages);
             ui.showNavigationOptions(new String[] {"[B] Active Rentals", "[M] Dashboard"});
             ui.inputBar("ENTER CHOICE", ConsoleUI.OVERDUE_TABLE_WIDTH);
 
@@ -1612,11 +1645,14 @@ public class GameRentalSystem {
         }
 
         int page = 0;
-        int totalPages = (logs.size() + LOG_PAGE_SIZE - 1) / LOG_PAGE_SIZE;
+        ArrayList<Integer> starts = ui.auditPages(logs);
+        int totalPages = starts.size() - 1;
         while (true) {
-            int start = page * LOG_PAGE_SIZE;
-            int end = Math.min(start + LOG_PAGE_SIZE, logs.size());
+            int start = starts.get(page);
+            int end = starts.get(page + 1);
             ui.printHeader("ADMIN AUDIT LOG (Most Recent First)", ConsoleUI.AUDIT_TABLE_WIDTH);
+            ui.showListStatus("Most recent first · Page: " + (page + 1) + "/" + totalPages,
+                "Showing " + (start + 1) + "-" + end + " of " + logs.size(), ConsoleUI.AUDIT_TABLE_WIDTH);
             ui.showAuditHeader(logs.size(), start, end);
 
             for (int i = start; i < end; i++) {
@@ -1635,12 +1671,7 @@ public class GameRentalSystem {
             }
 
             ui.info(ui.tableLine(ConsoleUI.AUDIT_TABLE_WIDTH));
-            if (page < totalPages - 1) {
-                ui.info("[N] Next Page");
-            }
-            if (page > 0) {
-                ui.info("[P] Previous Page");
-            }
+            ui.showPagination(page, totalPages);
             ui.showBackToDashboard();
             ui.inputBar("ENTER CHOICE", ConsoleUI.AUDIT_TABLE_WIDTH);
             String choice = ui.readText(ui.prompt(ConsoleUI.AUDIT_TABLE_WIDTH));
@@ -1735,10 +1766,16 @@ public class GameRentalSystem {
                     }
                     String input = ui.readText(ui.prompt());
                     if (input.equalsIgnoreCase("M")) {
+                        if (!ui.confirmDiscardTransaction("this add-game transaction", "Dashboard")) {
+                            continue;
+                        }
                         requestDashboardReturn();
                         return;
                     }
                     if (input.equalsIgnoreCase("C")) {
+                        if (!ui.confirmDiscardTransaction("this add-game transaction", "Inventory")) {
+                            continue;
+                        }
                         ui.info("Add-game transaction cancelled. No changes were made.");
                         return;
                     }
@@ -1746,6 +1783,9 @@ public class GameRentalSystem {
                         if (editing) {
                             editing = false;
                             step = 5;
+                            continue;
+                        }
+                        if (!title.isEmpty() && !ui.confirmDiscardTransaction("this add-game transaction", "Inventory")) {
                             continue;
                         }
                         return;
@@ -1778,10 +1818,16 @@ public class GameRentalSystem {
                     }
                     String input = ui.readText(ui.prompt());
                     if (input.equalsIgnoreCase("M")) {
+                        if (!ui.confirmDiscardTransaction("this add-game transaction", "Dashboard")) {
+                            continue;
+                        }
                         requestDashboardReturn();
                         return;
                     }
                     if (input.equalsIgnoreCase("C")) {
+                        if (!ui.confirmDiscardTransaction("this add-game transaction", "Inventory")) {
+                            continue;
+                        }
                         ui.info("Add-game transaction cancelled. No changes were made.");
                         return;
                     }
@@ -1830,10 +1876,16 @@ public class GameRentalSystem {
                     }
                     String input = ui.readText(ui.prompt());
                     if (input.equalsIgnoreCase("M")) {
+                        if (!ui.confirmDiscardTransaction("this add-game transaction", "Dashboard")) {
+                            continue;
+                        }
                         requestDashboardReturn();
                         return;
                     }
                     if (input.equalsIgnoreCase("C")) {
+                        if (!ui.confirmDiscardTransaction("this add-game transaction", "Inventory")) {
+                            continue;
+                        }
                         ui.info("Add-game transaction cancelled. No changes were made.");
                         return;
                     }
@@ -1872,10 +1924,16 @@ public class GameRentalSystem {
                     }
                     String input = ui.readText(ui.prompt());
                     if (input.equalsIgnoreCase("M")) {
+                        if (!ui.confirmDiscardTransaction("this add-game transaction", "Dashboard")) {
+                            continue;
+                        }
                         requestDashboardReturn();
                         return;
                     }
                     if (input.equalsIgnoreCase("C")) {
+                        if (!ui.confirmDiscardTransaction("this add-game transaction", "Inventory")) {
+                            continue;
+                        }
                         ui.info("Add-game transaction cancelled. No changes were made.");
                         return;
                     }
@@ -1907,10 +1965,16 @@ public class GameRentalSystem {
                     ui.inputBar("ENTER CHOICE");
                     String input = ui.readText(ui.prompt());
                     if (input.equalsIgnoreCase("M")) {
+                        if (!ui.confirmDiscardTransaction("this add-game transaction", "Dashboard")) {
+                            continue;
+                        }
                         requestDashboardReturn();
                         return;
                     }
                     if (input.equalsIgnoreCase("C")) {
+                        if (!ui.confirmDiscardTransaction("this add-game transaction", "Inventory")) {
+                            continue;
+                        }
                         ui.info("Add-game transaction cancelled. No changes were made.");
                         return;
                     }
@@ -2027,10 +2091,16 @@ public class GameRentalSystem {
                     String input = ui.readText(ui.prompt());
 
                     if (input.equalsIgnoreCase("M")) {
+                        if (!ui.confirmDiscardTransaction("this stock update", "Dashboard")) {
+                            continue;
+                        }
                         requestDashboardReturn();
                         return;
                     }
                     if (input.equalsIgnoreCase("C")) {
+                        if (!ui.confirmDiscardTransaction("this stock update", "Inventory")) {
+                            continue;
+                        }
                         ui.info("Stock update cancelled. No changes were made.");
                         return;
                     }
@@ -2045,6 +2115,17 @@ public class GameRentalSystem {
                     boolean adding = input.equals("1");
                     ui.showStockQuantityPrompt(adding);
                     String qtyInput = ui.readText(ui.prompt());
+                    while (qtyInput.equalsIgnoreCase("M") || qtyInput.equalsIgnoreCase("C")) {
+                        String destination = "Inventory";
+                        if (qtyInput.equalsIgnoreCase("M")) {
+                            destination = "Dashboard";
+                        }
+                        if (ui.confirmDiscardTransaction("this stock update", destination)) {
+                            break;
+                        }
+                        ui.showStockQuantityPrompt(adding);
+                        qtyInput = ui.readText(ui.prompt());
+                    }
                     if (qtyInput.equalsIgnoreCase("M")) {
                         requestDashboardReturn();
                         return;

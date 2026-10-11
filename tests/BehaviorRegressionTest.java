@@ -690,12 +690,18 @@ public class BehaviorRegressionTest {
                 }
             }
             if (System.getenv("NO_COLOR") == null && !"false".equals(System.getProperty("q2p.color"))) {
-                check(text.contains("\u001B[1;92m[Y] Yes"), "Yes uses bold green");
-                check(text.contains("\u001B[1;91m[N] No"), "No uses bold red");
-                check(text.contains("\u001B[1;94m[N] Next Page"), "Next Page uses bold blue");
-                check(text.contains("\u001B[1;38;5;218m[B] Order Summary"), "Back uses bold pink");
-                check(text.contains("\u001B[1;97m[S] Search") && !text.contains("\u001B[1;96m"), "Search uses bold white without cyan");
-                check(text.contains("\u001B[1;93m[E] Edit"), "Edit uses bold yellow");
+                check(text.contains("\u001B[1;92m[Y] Yes"), "Positive confirmation options are green");
+                check(text.contains("\u001B[1;91m[N] No"), "Negative confirmation options are red");
+                check(text.contains("\u001B[97m[N] Next Page"), "Pagination navigation options are white");
+                check(text.contains("\u001B[97m[B] Order Summary"), "Entire Back options are white");
+                check(text.contains("\u001B[97m[M] Dashboard")
+                    && text.contains("\u001B[1;38;2;212;160;23m[S]\u001B[0m\u001B[97m Search"),
+                    "Dashboard is white and regular options have mustard keys with white labels");
+                check(text.contains("\u001B[1;38;2;212;160;23m[E]\u001B[0m\u001B[97m Edit")
+                    && text.contains("\u001B[1;91m[C] Cancel")
+                    && text.contains("\u001B[1;91m[L] Logout") && text.contains("\u001B[1;91m[Q] Exit")
+                    && text.contains("\u001B[1;38;2;212;160;23m[R]\u001B[0m\u001B[97m Receipt"),
+                    "Destructive labels are red while Edit and Receipt remain regular options");
             } else {
                 check(!text.contains("\u001B["), "Choice colors respect disabled colors");
             }
@@ -721,8 +727,10 @@ public class BehaviorRegressionTest {
             ui.info("");
             String plain = positionedDrawing(output, 93);
             String[] lines = plain.split("\\R");
-            check(lines[0].length() == 93 && lines[0].endsWith("Page: 1/2"), "Page aligns to the far right");
-            check(lines[1].length() == 93 && lines[1].endsWith("Cart: 2 games · 3 copies"), "Cart totals align right on the Sort row");
+            check(lines[1].length() == 93 && lines[1].substring(0, 92).trim().endsWith("Page: 1/2"),
+                    "Page aligns right inside the status box");
+            check(lines[3].length() == 93 && lines[3].substring(0, 92).trim().endsWith("Cart: 2 games · 3 copies"),
+                    "Cart totals align right inside the Sort row");
             check(plain.contains("[S] Search      [T] Sort      [X] Clear Search"), "Three tool choices have six-space gaps");
             check(!plain.contains("Type an option") && !plain.contains("Enter a displayed")
                     && !plain.contains("[C]"), "Rental panel omits generic tutorials and duplicate cancellation");
@@ -748,10 +756,14 @@ public class BehaviorRegressionTest {
             String text = output.toString("UTF-8");
             check(!text.contains("\u001B[1;96m"), "Platform choices contain no cyan");
             if (System.getenv("NO_COLOR") == null && !"false".equals(System.getProperty("q2p.color"))) {
-                check(text.contains("\u001B[1;95m[1] Browse All Games"), "All Games uses violet");
-                check(text.contains("\u001B[1;94m[2] PS5"), "PS5 uses blue");
-                check(text.contains("\u001B[1;92m[3] Xbox"), "Xbox uses green");
-                check(text.contains("\u001B[1;91m[4] Nintendo"), "Nintendo uses red");
+                check(text.contains("\u001B[1;38;2;212;160;23m[1]\u001B[0m\u001B[1;95m Browse All Games"),
+                    "Browse All Games has a mustard key and violet label");
+                check(text.contains("\u001B[1;38;2;212;160;23m[2]\u001B[0m\u001B[1;94m PS5"),
+                    "PS5 has a mustard key and blue label");
+                check(text.contains("\u001B[1;38;2;212;160;23m[3]\u001B[0m\u001B[1;92m Xbox"),
+                    "Xbox has a mustard key and green label");
+                check(text.contains("\u001B[1;38;2;212;160;23m[4]\u001B[0m\u001B[1;91m Nintendo"),
+                    "Nintendo has a mustard key and red label");
             }
             for (int width : new int[] {81, 60, 40}) {
                 System.setProperty("q2p.width", String.valueOf(width));
@@ -1575,10 +1587,10 @@ public class BehaviorRegressionTest {
         check(system.games.get("P002").title.equals("Other"), "Editing does not consume a game ID before saving");
 
         system = freshSystem("game-edit-cancel");
-        ui = script(system, new String[] {"Cancel Draft", "1", "5", "3", "E", "1", "C"});
+        ui = script(system, new String[] {"Cancel Draft", "1", "5", "3", "E", "1", "C", "Y"});
         system.addGame();
         check(system.games.isEmpty() && system.auditLog.isEmpty(), "Cancel during editing saves no game or audit entry");
-        ui = script(system, new String[] {"Dashboard Draft", "1", "5", "3", "E", "3", "M"});
+        ui = script(system, new String[] {"Dashboard Draft", "1", "5", "3", "E", "3", "M", "Y"});
         system.addGame();
         check(system.games.isEmpty() && system.isDashboardReturnRequested(), "Dashboard during editing saves no draft");
     }
@@ -2195,12 +2207,240 @@ public class BehaviorRegressionTest {
         }
     }
 
+    static void responsiveListTests() throws Exception {
+        String previousWidth = System.getProperty("q2p.width");
+        String previousHeight = System.getProperty("q2p.height");
+        PrintStream previous = System.out;
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(output, true, "UTF-8"));
+        try {
+            System.setProperty("q2p.width", "120");
+            System.setProperty("q2p.height", "36");
+            ConsoleUI ui = new ConsoleUI();
+            ArrayList<Game> games = new ArrayList<>();
+            for (int i = 0; i < 12; i++) {
+                games.add(new Game("P" + (100 + i), "Game " + i, "PS5", 5, 3));
+            }
+            ArrayList<Integer> starts = ui.gamePages(games);
+            check(starts.get(1) == 7, "Short terminals show fewer than nine catalog games");
+            System.setProperty("q2p.height", "60");
+            ui = new ConsoleUI();
+            starts = ui.gamePages(games);
+            check(starts.get(1) == 9, "Tall terminals still cap the catalog at nine games");
+            System.setProperty("q2p.height", "36");
+            ui = new ConsoleUI();
+            String title = "A longer game title with several words that continue neatly in the title column ENDMARK";
+            for (Game game : games) {
+                game.title = title;
+            }
+            starts = ui.gamePages(games);
+            check(starts.get(1) < 7, "Wrapped catalog titles consume more page space");
+            for (int page = 0; page < starts.size() - 1; page++) {
+                output.reset();
+                int start = starts.get(page);
+                int end = starts.get(page + 1);
+                ui.printHeader("RENT GAMES", ConsoleUI.GAME_TABLE_WIDTH);
+                LinkedHashMap<Game, Integer> cart = new LinkedHashMap<>();
+                cart.put(games.get(0), 1);
+                ui.showCatalogState("longer", 0, page + 1, starts.size() - 1, cart);
+                ui.showGameTableHeader(games.size(), start, end);
+                for (int i = start; i < end; i++) {
+                    ui.showGameRow(i - start + 1, games.get(i));
+                }
+                ui.info(ui.tableLine(ConsoleUI.GAME_TABLE_WIDTH));
+                ui.showGameNavigation(page, starts.size() - 1, "longer", true, true, end - start);
+                ui.inputBar("ENTER CHOICE", ConsoleUI.GAME_TABLE_WIDTH);
+                ui.info(ui.prompt(ConsoleUI.GAME_TABLE_WIDTH));
+                String plain = positionedDrawing(output, ConsoleUI.GAME_TABLE_WIDTH);
+                check(plain.split("\\R").length <= 36, "Complete catalog page reserves room for choices and prompt");
+                check(plain.contains("ENDMARK") && !plain.contains("..."), "Whole wrapped titles remain visible on their page");
+                check(plain.contains("[N]") == (page < starts.size() - 2), "Only usable Next keys appear");
+                check(plain.contains("[P]") == (page > 0), "Only usable Previous keys appear");
+            }
+            ArrayList<String> logs = new ArrayList<>();
+            for (int i = 0; i < 8; i++) {
+                logs.add("2026-10-11 12:31:00|" + title + " " + title);
+            }
+            ArrayList<Integer> logStarts = ui.auditPages(logs);
+            check(logStarts.get(1) < 8, "Long logs use complete-record pages");
+            output.reset();
+            ui.printHeader("ADMIN AUDIT LOG", ConsoleUI.AUDIT_TABLE_WIDTH);
+            ui.showListStatus("Most recent first · Page: 1/" + (logStarts.size() - 1),
+                "Showing 1-" + logStarts.get(1), ConsoleUI.AUDIT_TABLE_WIDTH);
+            ui.showAuditHeader(logs.size(), 0, logStarts.get(1));
+            for (int i = 0; i < logStarts.get(1); i++) {
+                ui.showAuditRow(java.time.LocalDateTime.of(2026, 10, 11, 0, 31), logs.get(i).split("\\|", 2));
+            }
+            ui.info(ui.tableLine(ConsoleUI.AUDIT_TABLE_WIDTH));
+            ui.showPagination(0, logStarts.size() - 1);
+            ui.showBackToDashboard();
+            ui.inputBar("ENTER CHOICE", ConsoleUI.AUDIT_TABLE_WIDTH);
+            ui.info(ui.prompt(ConsoleUI.AUDIT_TABLE_WIDTH));
+            check(positionedDrawing(output, ConsoleUI.AUDIT_TABLE_WIDTH).split("\\R").length <= 36,
+                "Wrapped log pages fit the terminal including navigation");
+
+            output.reset();
+            GameRentalSystem queueSystem = freshSystem("checkout-page-height");
+            User queueUser = client("heightclient", "REGULAR");
+            for (int i = 0; i < 12; i++) {
+                Game game = queueSystem.gameCatalog.addGame("Height Game " + i, "PS5", 5, 3);
+                enqueue(queueSystem, queueUser, game, 1);
+            }
+            ui.showCheckoutQueue(queueSystem.checkoutQueue, queueSystem.rentalService);
+            ui.info(ui.prompt(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH));
+            check(positionedDrawing(output, ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH).split("\\R").length <= 36,
+                "Admin queue reserves space for its status, grouped choices and prompt");
+            ui.endCheckoutDisplay();
+
+            System.setProperty("q2p.width", "60");
+            System.setProperty("q2p.height", "50");
+            ui = new ConsoleUI();
+            output.reset();
+            ui.printHeader("GAMES", ConsoleUI.GAME_TABLE_WIDTH);
+            ui.showGameTableHeader(1, 0, 1);
+            ui.showGameRow(1, games.get(0));
+            ui.info(ui.tableLine(ConsoleUI.GAME_TABLE_WIDTH));
+            String plain = positionedDrawing(output, 60);
+            for (String line : plain.split("\\R")) {
+                check(line.length() <= 60, "Narrow tables keep their columns within the terminal");
+            }
+            String recoveredTitle = "";
+            boolean readingGame = false;
+            for (String line : plain.split("\\R")) {
+                if (line.startsWith("1 ")) {
+                    readingGame = true;
+                }
+                String[] columns = line.split("[|│]");
+                if (readingGame && columns.length == 7) {
+                    recoveredTitle += columns[2].trim();
+                }
+            }
+            check(recoveredTitle.replace(" ", "").equals(title.replace(" ", "")), "Narrow records preserve the complete title across continuation lines");
+            output.reset();
+            ui.inputBar("EMAIL", 60);
+            ui.info("");
+            plain = positionedDrawing(output, 60);
+            for (String line : plain.split("\\R")) {
+                if (line.contains("Max 100") || line.contains("Example:")) {
+                    String content = line.trim();
+                    int left = line.indexOf(content);
+                    int right = line.length() - left - content.length();
+                    check(Math.abs(left - right) <= 1, "Guidance and examples are centered above input");
+                }
+            }
+            String styled = output.toString("UTF-8");
+            if (System.getenv("NO_COLOR") == null && !"false".equals(System.getProperty("q2p.color"))) {
+                check(styled.contains("\u001B[1;97m") && styled.contains("\u001B[1;90m"),
+                    "Guidance is bold white and examples are bold gray");
+            }
+        } finally {
+            System.setOut(previous);
+            if (previousWidth == null) {
+                System.clearProperty("q2p.width");
+            } else {
+                System.setProperty("q2p.width", previousWidth);
+            }
+            if (previousHeight == null) {
+                System.clearProperty("q2p.height");
+            } else {
+                System.setProperty("q2p.height", previousHeight);
+            }
+        }
+    }
+
+    static void discardConfirmationTests() throws Exception {
+        GameRentalSystem system = freshSystem("retain-add-game");
+        ScriptedUI ui = script(system, new String[] {"Retained Draft", "1", "5", "3",
+            "E", "3", "C", "bad", "N", "6", "M", "N", "1", "N"});
+        system.addGame();
+        Game game = system.games.get("P001");
+        check(game != null && game.title.equals("Retained Draft") && game.price == 6 && game.availableCopies == 3,
+            "No at Cancel and Dashboard keeps the add-game draft and the edited field");
+        check(ui.errors.contains("Use Y or N.") && !system.isDashboardReturnRequested(),
+            "Invalid discard answers retry and No does not request Dashboard");
+        system = freshSystem("discard-add-game");
+        ui = script(system, new String[] {"Discard Draft", "1", "C", "Y"});
+        system.addGame();
+        check(system.games.isEmpty() && system.auditLog.isEmpty(), "Yes discards an unsaved game without saving");
+
+        system = freshSystem("retain-stock-quantity");
+        game = system.gameCatalog.addGame("Stock Draft", "PS5", 5, 3);
+        ui = script(system, new String[] {"1", "1", "2", "C", "N", "2", "Y", "N"});
+        system.updateGameStock();
+        check(game.availableCopies == 1, "No at Cancel stays at quantity and retains the decrease operation");
+        system = freshSystem("retain-stock-dashboard");
+        game = system.gameCatalog.addGame("Stock Draft", "PS5", 5, 3);
+        ui = script(system, new String[] {"1", "1", "1", "M", "N", "2", "Y", "N"});
+        system.updateGameStock();
+        check(game.availableCopies == 5 && !system.isDashboardReturnRequested(),
+            "No at Dashboard stays at quantity and retains the add operation");
+
+        system = freshSystem("retain-remove-input");
+        User user = client("cartclient", "REGULAR");
+        Game first = system.gameCatalog.addGame("First", "PS5", 5, 3);
+        Game second = system.gameCatalog.addGame("Second", "Xbox", 5, 3);
+        LinkedHashMap<Game, Integer> cart = new LinkedHashMap<>();
+        cart.put(first, 1);
+        cart.put(second, 1);
+        ui = script(system, new String[] {"2", "M", "N", "1", "B"});
+        int days = system.editOrder(user, cart, 3);
+        check(days == 3 && cart.size() == 1 && cart.containsKey(second) && ui.nextChoice == 5,
+            "No at Dashboard returns to the remove-line input and retains the rest of the cart");
+
+        system = freshSystem("registration-back-confirm");
+        AccountUI accountUI = new AccountUI(new String[] {"John Doe", "B", "B", "N",
+            "John Doe", "keptuser", "kept@example.com", "12345678", "12345678", "1"});
+        accountScript(system, accountUI).register();
+        check(system.users.size() == 1 && system.users.get(0).username.equals("keptuser"),
+            "Back at Full Name confirms before discarding previously entered registration information");
+    }
+
+    static void queuePageNavigationTests() {
+        String previousHeight = System.getProperty("q2p.height");
+        System.setProperty("q2p.height", "36");
+        try {
+            GameRentalSystem system = freshSystem("queue-pages-only");
+            User user = client("queueclient", "REGULAR");
+            system.users.add(user);
+            for (int i = 0; i < 12; i++) {
+                Game game = system.gameCatalog.addGame("Queue Game " + i, "PS5", 5, 3);
+                enqueue(system, user, game, 1);
+            }
+            ScriptedUI ui = script(system, new String[] {"N", "P", "B"});
+            system.checkoutManagement();
+            check(ui.queueScreens == 3 && ui.tapeRentals.isEmpty() && system.checkoutQueue.getRequests().size() == 12,
+                "Admin queue Next/Previous changes only the displayed page");
+            ui = script(system, new String[] {"N", "P", "B"});
+            system.cancelMyRequest(user);
+            check(ui.nextChoice == 3 && ui.customerQueuePositions.contains(12)
+                    && ui.customerQueuePositions.get(0) == 1 && system.checkoutQueue.vipStreak == 0,
+                "Customer queue pagination retains global processing positions and streak");
+            for (Game game : system.games.values()) {
+                check(game.availableCopies == 3, "Queue page navigation does not change stock");
+            }
+        } finally {
+            if (previousHeight == null) {
+                System.clearProperty("q2p.height");
+            } else {
+                System.setProperty("q2p.height", previousHeight);
+            }
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         new ConsoleUI(); // Initialize the UTF-8 output stream before capturing TUI output.
         PrintStream originalOutput = System.out;
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         System.setOut(new PrintStream(output, true, "UTF-8"));
         testRoot = Files.createTempDirectory("q2p-behavior-tests-");
+        if (args.length > 0 && args[0].equals("responsive")) {
+            responsiveListTests();
+            discardConfirmationTests();
+            queuePageNavigationTests();
+            System.setOut(originalOutput);
+            System.out.println("PASS: " + checks + " responsive/discard checks. Isolated data: " + testRoot);
+            return;
+        }
         if (args.length > 0 && args[0].equals("editing")) {
             gameEditingTests();
             categoryLayoutTests();
@@ -2209,6 +2449,7 @@ public class BehaviorRegressionTest {
             return;
         }
         if (args.length > 0 && args[0].equals("layout")) {
+            responsiveListTests();
             choiceAndCooldownLayoutTests();
             rentalPanelTests();
             menuLayoutTests();
@@ -2254,6 +2495,9 @@ public class BehaviorRegressionTest {
         receiptNavigationTests();
         completedResultTests();
         gameEditingTests();
+        responsiveListTests();
+        discardConfirmationTests();
+        queuePageNavigationTests();
         categoryLayoutTests();
         checkoutLayoutTests();
         tapeFlowTests();

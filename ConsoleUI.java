@@ -38,6 +38,7 @@ public class ConsoleUI {
     static final int CHECKOUT_QUEUE_TABLE_WIDTH = 81;
     private final Scanner input = new Scanner(System.in);
     private final int terminalWidth = Math.max(40, Integer.getInteger("q2p.width", configuredWidth()));
+    private final int terminalHeight = Math.max(20, Integer.getInteger("q2p.height", configuredHeight()));
     private final boolean cursorEnabled = Boolean.parseBoolean(
         System.getProperty("q2p.ansi", String.valueOf(System.console() != null)));
     private boolean outputAtLineStart = true;
@@ -50,6 +51,301 @@ public class ConsoleUI {
             return 120;
         }
     }
+    private static int configuredHeight() {
+        try {
+            return Integer.parseInt(System.getenv("LINES"));
+        } catch (NumberFormatException e) {
+            return 50;
+        }
+    }
+
+    // Each boundary points to a whole record, never a continuation line.
+    ArrayList<Integer> pageStarts(int[] heights, int maximum, int reservedRows) {
+        ArrayList<Integer> starts = new ArrayList<>();
+        starts.add(0);
+        int used = 0;
+        int count = 0;
+        int available = Math.max(1, terminalHeight - reservedRows);
+        for (int i = 0; i < heights.length; i++) {
+            if (count > 0 && (count == maximum || used + heights[i] > available)) {
+                starts.add(i);
+                used = 0;
+                count = 0;
+            }
+            used += heights[i];
+            count++;
+        }
+        starts.add(heights.length);
+        return starts;
+    }
+
+    private int wrappedLines(String text, int width) {
+        return wrapText(text, width).size();
+    }
+
+    private String columnPart(String text, int row, int width) {
+        ArrayList<String> lines = wrapText(text, width);
+        if (row >= lines.size()) {
+            return "";
+        }
+        return lines.get(row);
+    }
+
+    private ArrayList<String> wrapText(String text, int width) {
+        ArrayList<String> lines = new ArrayList<>();
+        while (text.length() > width) {
+            int end = text.lastIndexOf(' ', width);
+            if (end <= 0) {
+                end = width;
+            }
+            lines.add(text.substring(0, end));
+            text = text.substring(end).trim();
+        }
+        lines.add(text);
+        return lines;
+    }
+
+    // Shrink columns only when the terminal is narrower than the table.
+    private int[] displayWidths(int[] widths, int tableWidth) {
+        int[] result = widths.clone();
+        if (checkoutDisplay) {
+            return result;
+        }
+        int remaining = tableWidth - terminalWidth;
+        while (remaining > 0) {
+            int widest = 0;
+            for (int i = 1; i < result.length; i++) {
+                if (result[i] > result[widest]) {
+                    widest = i;
+                }
+            }
+            if (result[widest] <= 2) {
+                break;
+            }
+            result[widest]--;
+            remaining--;
+        }
+        return result;
+    }
+
+    private int recordHeight(String[] cells, int[] widths, int tableWidth) {
+        if (!checkoutDisplay && terminalWidth < 60) {
+            return wrapText(recordText(cells), terminalWidth - 2).size();
+        }
+        widths = displayWidths(widths, tableWidth);
+        int rows = 1;
+        for (int i = 0; i < cells.length; i++) {
+            rows = Math.max(rows, wrappedLines(cells[i], widths[i]));
+        }
+        return rows;
+    }
+
+    private String recordText(String[] cells) {
+        String text = "";
+        for (String cell : cells) {
+            if (!cell.isEmpty()) {
+                if (!text.isEmpty()) {
+                    text += " | ";
+                }
+                text += cell;
+            }
+        }
+        return text;
+    }
+
+    private void printRecord(String format, String[] cells, int[] widths) {
+        if (!checkoutDisplay && terminalWidth < 60) {
+            boolean first = true;
+            for (String line : wrapText(recordText(cells), terminalWidth - 2)) {
+                if (first) {
+                    printLine(line);
+                    first = false;
+                } else {
+                    printLine("  " + line);
+                }
+            }
+            return;
+        }
+        String[] empty = new String[cells.length];
+        for (int i = 0; i < empty.length; i++) {
+            empty[i] = "";
+        }
+        int tableWidth = String.format(format, (Object[]) empty).length();
+        widths = displayWidths(widths, tableWidth);
+        Matcher columns = Pattern.compile("%(-?)([0-9]+)s").matcher(format);
+        String adjusted = "";
+        int start = 0;
+        int column = 0;
+        while (columns.find()) {
+            adjusted += format.substring(start, columns.start()) + "%" + columns.group(1) + widths[column] + "s";
+            start = columns.end();
+            column++;
+        }
+        format = adjusted + format.substring(start);
+        int rows = 1;
+        for (int i = 0; i < cells.length; i++) {
+            rows = Math.max(rows, wrappedLines(cells[i], widths[i]));
+        }
+        for (int row = 0; row < rows; row++) {
+            String[] parts = new String[cells.length];
+            for (int i = 0; i < cells.length; i++) {
+                parts[i] = columnPart(cells[i], row, widths[i]);
+            }
+            printLine(String.format(format, (Object[]) parts));
+        }
+    }
+
+    ArrayList<Integer> gamePages(ArrayList<Game> games) {
+        int[] heights = new int[games.size()];
+        for (int i = 0; i < games.size(); i++) {
+            Game game = games.get(i);
+            heights[i] = recordHeight(new String[] {String.valueOf(i + 1), game.gameId, game.title,
+                game.platform, money(game.price), String.valueOf(game.availableCopies), "OUT OF STOCK"},
+                new int[] {4, 6, 30, 10, 8, 5, 12}, GAME_TABLE_WIDTH);
+        }
+        int headings = recordHeight(new String[] {"NO.", "ID", "GAME TITLE", "PLATFORM", "PRICE", "STOCK", "STATUS"},
+            new int[] {4, 6, 30, 10, 8, 5, 12}, GAME_TABLE_WIDTH);
+        return pageStarts(heights, 9, 29 + headings - 1);
+    }
+
+    ArrayList<Integer> rentalPages(ArrayList<Rental> rentals, String kind) {
+        int[] heights = new int[rentals.size()];
+        int width = ACTIVE_TABLE_WIDTH;
+        int maximum = 3;
+        int reserved = 22;
+        if (kind.equals("return")) {
+            width = RETURN_TABLE_WIDTH;
+            maximum = 9;
+            reserved = 26;
+        } else if (kind.equals("history")) {
+            width = HISTORY_TABLE_WIDTH;
+        } else if (kind.equals("overdue")) {
+            width = OVERDUE_TABLE_WIDTH;
+            reserved = 24;
+        }
+        for (int i = 0; i < rentals.size(); i++) {
+            Rental rental = rentals.get(i);
+            if (kind.equals("history")) {
+                heights[i] = recordHeight(new String[] {rentalLabel(rental.rentalNumber), rental.game.title,
+                    String.valueOf(rental.quantity), rental.checkoutDate.format(GameRentalSystem.TABLE_DATE_FORMAT),
+                    rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT), money(rental.amount), rental.status},
+                    new int[] {8, 28, 3, 21, 21, 9, 10}, width);
+            } else if (kind.equals("return")) {
+                heights[i] = recordHeight(new String[] {String.valueOf(i + 1), rentalLabel(rental.rentalNumber),
+                    rental.client.username, rental.game.title, String.valueOf(rental.quantity),
+                    rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT)},
+                    new int[] {4, 8, 14, 30, 3, 21}, width);
+            } else if (kind.equals("overdue")) {
+                heights[i] = recordHeight(new String[] {rentalLabel(rental.rentalNumber), rental.client.username,
+                    rental.game.title, String.valueOf(rental.quantity), rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT),
+                    String.valueOf(RentalService.daysOverdue(rental.dueDate, LocalDateTime.now())),
+                    money(GameRentalSystem.LATE_FEE_PER_DAY * rental.quantity
+                        * RentalService.daysOverdue(rental.dueDate, LocalDateTime.now()))},
+                    new int[] {8, 14, 28, 3, 21, 9, 9}, width);
+            } else {
+                heights[i] = recordHeight(new String[] {rentalLabel(rental.rentalNumber), rental.client.username,
+                    rental.game.title, rental.game.platform, String.valueOf(rental.quantity),
+                    rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT), rental.status},
+                    new int[] {8, 14, 28, 10, 3, 21, 10}, width);
+            }
+            if (kind.equals("history") && rental.returnDate != null) {
+                String returned = "Returned: " + rental.returnDate.format(GameRentalSystem.TABLE_DATE_FORMAT)
+                    + " | Days late: " + rental.daysLate + " | Recorded late fee: " + money(rental.lateFee);
+                heights[i] += Math.max(1, (returned.length() + terminalWidth - 1) / terminalWidth);
+            }
+        }
+        int headings = 1;
+        if (kind.equals("history")) {
+            headings = recordHeight(new String[] {"RENTAL #", "GAME TITLE", "QTY", "RENTED ON", "DUE ON", "AMOUNT", "STATUS"},
+                new int[] {8, 28, 3, 21, 21, 9, 10}, width);
+        } else if (kind.equals("return")) {
+            headings = recordHeight(new String[] {"NO.", "RENTAL #", "CUSTOMER", "GAME TITLE", "QTY", "DUE DATE"},
+                new int[] {4, 8, 14, 30, 3, 21}, width);
+        } else if (kind.equals("overdue")) {
+            headings = recordHeight(new String[] {"RENTAL #", "CUSTOMER", "GAME TITLE", "QTY", "DUE DATE", "DAYS LATE", "LATE FEE"},
+                new int[] {8, 14, 28, 3, 21, 9, 9}, width);
+        } else {
+            headings = recordHeight(new String[] {"RENTAL #", "CUSTOMER", "GAME TITLE", "PLATFORM", "QTY", "DUE DATE", "STATUS"},
+                new int[] {8, 14, 28, 10, 3, 21, 10}, width);
+        }
+        return pageStarts(heights, maximum, reserved + headings - 1);
+    }
+
+    ArrayList<Integer> auditPages(ArrayList<String> logs) {
+        int[] heights = new int[logs.size()];
+        for (int i = 0; i < logs.size(); i++) {
+            String[] parts = logs.get(i).split("\\|", 2);
+            String action = logs.get(i);
+            if (parts.length == 2) {
+                try {
+                    LocalDateTime.parse(parts[0], GameRentalSystem.LOG_STORAGE_FORMAT);
+                    action = parts[1];
+                } catch (java.time.DateTimeException e) {
+                    // Keep the complete older record visible.
+                }
+            }
+            heights[i] = recordHeight(new String[] {"Oct 11, 2026", "12:31 AM", action},
+                new int[] {13, 10, 58}, AUDIT_TABLE_WIDTH) + 1;
+        }
+        int headings = recordHeight(new String[] {"DATE", "TIME", "ACTION"},
+            new int[] {13, 10, 58}, AUDIT_TABLE_WIDTH);
+        return pageStarts(heights, 9, 22 + headings - 1);
+    }
+
+    ArrayList<Integer> queuePages(ArrayList<RentalRequest> requests) {
+        int[] heights = new int[requests.size()];
+        for (int i = 0; i < requests.size(); i++) {
+            RentalRequest request = requests.get(i);
+            heights[i] = recordHeight(new String[] {queueLabel(request.queueNumber), request.game.title,
+                request.game.platform, String.valueOf(request.quantity), "WAITING"},
+                new int[] {8, 30, 10, 5, 8}, QUEUE_TABLE_WIDTH);
+        }
+        int headings = recordHeight(new String[] {"QUEUE #", "GAME TITLE", "PLATFORM", "QTY", "POSITION"},
+            new int[] {8, 30, 10, 5, 8}, QUEUE_TABLE_WIDTH);
+        return pageStarts(heights, 9, 24 + headings - 1);
+    }
+
+    void showPagination(int page, int pages) {
+        ArrayList<String> choices = new ArrayList<>();
+        if (page < pages - 1) {
+            choices.add("[N] Next Page");
+        }
+        if (page > 0) {
+            choices.add("[P] Previous Page");
+        }
+        showChoiceGroup(choices.toArray(new String[0]));
+    }
+
+    void showListStatus(String first, String second, int width) {
+        width = Math.min(width, terminalWidth);
+        currentWidth = width;
+        lightBox = false;
+        printLine(border(width, '='));
+        printBoxCentered(first, width);
+        printLine(border(width, '='));
+        printBoxCentered(second, width);
+        printLine(border(width, '='));
+        flushBorder(false);
+        printLine();
+    }
+
+    boolean confirmDiscardTransaction(String transaction, String destination) {
+        while (true) {
+            printLine(border(currentWidth, '-'));
+            printWrappedBoxText("Discard " + transaction + " and return to " + destination + "?", currentWidth);
+            printLine(border(currentWidth, '-'));
+            inputBar("CONFIRM", currentWidth, "[Y] Discard      [N] Keep Editing");
+            String answer = readText(prompt());
+            if (answer.equalsIgnoreCase("Y") || answer.equalsIgnoreCase("YES")) {
+                return true;
+            }
+            if (answer.equalsIgnoreCase("N") || answer.equalsIgnoreCase("NO")) {
+                return false;
+            }
+            error("Use Y or N.");
+        }
+    }
+
     private int currentWidth = STANDARD_WIDTH;
     private static final String RESET = "\u001B[0m";
     private static final String PINK = "\u001B[38;5;218m"; // ZendCash baby pink
@@ -60,6 +356,7 @@ public class ConsoleUI {
     private static final String GREEN = "\u001B[92m";
     private static final String AVAILABLE_GREEN = "\u001B[38;2;21;71;52m"; // #154734
     private static final String MUSTARD = "\u001B[38;2;212;160;23m"; // #D4A017
+    private static final String BOLD_MUSTARD = "\u001B[1;38;2;212;160;23m";
     private static final Pattern STATUS_WORDS = Pattern.compile("\\b(VIP|AVAILABLE|OUT OF STOCK|COMPLETED|OVERDUE|PS5|Xbox|Nintendo)\\b");
     // Run with -Dq2p.ascii=true to keep plain + - | borders on terminals without UTF-8.
     private final boolean unicode = !"true".equalsIgnoreCase(System.getProperty("q2p.ascii"));
@@ -77,7 +374,32 @@ public class ConsoleUI {
         while (choices.find()) {
             result.append(text.substring(start, choices.start()));
             String choice = choices.group();
-            String tone = BOLD_WHITE;
+            int keyEnd = choice.indexOf(']') + 1;
+            String key = choice.substring(0, keyEnd);
+            String label = choice.substring(keyEnd);
+            String action = label.trim().toLowerCase();
+            if ((key.equals("[B]") || key.equals("[M]") || choice.contains("Main Menu")
+                    || action.startsWith("next page") || action.startsWith("previous page"))
+                    && !action.startsWith("discard")) {
+                result.append(color(choice, SOFT_WHITE));
+                start = choices.end();
+                continue;
+            }
+            if (key.equals("[Y]") || action.startsWith("confirm") || action.startsWith("approve")
+                    || action.startsWith("create account") || action.startsWith("submit") || action.startsWith("save")) {
+                result.append(color(choice, "\u001B[1;92m"));
+                start = choices.end();
+                continue;
+            }
+            if (action.startsWith("logout") || action.startsWith("cancel") || action.startsWith("exit")
+                    || (action.startsWith("delete") && !choice.trim().equals("[4] Delete Game"))
+                    || action.startsWith("remove") || action.startsWith("discard")
+                    || key.equals("[N]")) {
+                result.append(color(choice, "\u001B[1;91m"));
+                start = choices.end();
+                continue;
+            }
+            String tone = SOFT_WHITE;
             if (choice.contains("All Games")) {
                 tone = "\u001B[1;95m";
             } else if (choice.contains("PS5")) {
@@ -86,19 +408,9 @@ public class ConsoleUI {
                 tone = "\u001B[1;92m";
             } else if (choice.contains("Nintendo")) {
                 tone = "\u001B[1;91m";
-            } else if (choice.startsWith("[Y]") || choice.startsWith("[F]")) {
-                tone = "\u001B[1;92m";
-            } else if (choice.contains("Discard Cart") || choice.startsWith("[C]") || choice.startsWith("[L]") || choice.startsWith("[Q]")
-                    || choice.startsWith("[N]") && !choice.toLowerCase().contains("next")) {
-                tone = "\u001B[1;91m";
-            } else if (choice.startsWith("[B]") || choice.startsWith("[M]")) {
-                tone = "\u001B[1;38;5;218m";
-            } else if (choice.startsWith("[N]") || choice.startsWith("[P]")) {
-                tone = "\u001B[1;94m";
-            } else if (choice.startsWith("[E]")) {
-                tone = "\u001B[1;93m";
             }
-            result.append(color(choice, tone));
+            result.append(color(key, BOLD_MUSTARD));
+            result.append(color(label, tone));
             start = choices.end();
         }
         result.append(text.substring(start));
@@ -143,6 +455,20 @@ public class ConsoleUI {
     private String pendingMessage = null;
     private String pendingMessageType = null;
     private boolean checkoutDisplay = false;
+    private int checkoutPage = 0;
+    private int checkoutPages = 1;
+
+    boolean moveCheckoutPage(String choice) {
+        if (choice.equalsIgnoreCase("N") && checkoutPage < checkoutPages - 1) {
+            checkoutPage++;
+            return true;
+        }
+        if (choice.equalsIgnoreCase("P") && checkoutPage > 0) {
+            checkoutPage--;
+            return true;
+        }
+        return false;
+    }
     private static final DateTimeFormatter RECEIPT_DATE = DateTimeFormatter.ofPattern("MMM dd", java.util.Locale.ENGLISH);
 
     private String color(String text, String tone) {
@@ -564,9 +890,18 @@ public class ConsoleUI {
             printLine();
         }
         if (!guide.isEmpty()) {
+            printLine();
+            guide = guide.replace(". Example:", ".\nExample:");
             for (String row : guide.split("\n")) {
-                printLine(fit(row, width));
+                String tone = BOLD_WHITE;
+                if (row.toLowerCase().contains("example")) {
+                    tone = "\u001B[1;90m";
+                }
+                for (String part : wrapText(row, width)) {
+                    emitLine(color(center(part, width), tone));
+                }
             }
+            printLine();
         }
         String text = " " + fit(label.trim(), width - 2) + " ";
         int remaining = Math.max(0, width - text.length());
@@ -592,7 +927,7 @@ public class ConsoleUI {
             case "QUANTITY TO ADD":
             case "QUANTITY TO DECREASE": return "Whole copies only.";
             case "RENTAL DURATION": return "1-" + GameRentalSystem.MAX_RENTAL_DAYS + " days.";
-            case "QUEUE NUMBER TO CANCEL": return "Queue number, for example 003.";
+            case "QUEUE NUMBER TO CANCEL": return "Queue number.\nExample: 003.";
             case "DAYS LATE": return "Enter days late; use 0 if returned on time.";
             case "RENTAL PRICE": return money(GameRentalSystem.MIN_RENTAL_PRICE)
                 + " to " + money(GameRentalSystem.MAX_RENTAL_PRICE) + ".";
@@ -800,6 +1135,9 @@ public class ConsoleUI {
 
     void printHeader(String title, int width) {
         clearScreen();
+        if (!checkoutDisplay) {
+            width = Math.min(width, terminalWidth);
+        }
         currentWidth = width;
         printLine(border(width, '='));
         printTitle(title, width);
@@ -812,6 +1150,9 @@ public class ConsoleUI {
 
     void printHeader(String path, String title, int width) {
         clearScreen();
+        if (!checkoutDisplay) {
+            width = Math.min(width, terminalWidth);
+        }
         currentWidth = width;
         printLine(border(width, '='));
         printTitle(path, width);
@@ -1411,8 +1752,7 @@ public class ConsoleUI {
         printLine("Showing " + (start + 1) + "-" + end + " of " + total + " games");
         printLine();
         printLine(tableLine(ConsoleUI.GAME_TABLE_WIDTH));
-        printFormatted(String.format("%-4s | %-6s | %-30s | %-10s | %8s | %5s | %-12s%n",
-            "NO.", "ID", "GAME TITLE", "PLATFORM", "PRICE", "STOCK", "STATUS"));
+        printRecord("%-4s | %-6s | %-30s | %-10s | %8s | %5s | %-12s", new String[] {"NO.", "ID", "GAME TITLE", "PLATFORM", "PRICE", "STOCK", "STATUS"}, new int[] {4, 6, 30, 10, 8, 5, 12});
         printLine(tableLine(ConsoleUI.GAME_TABLE_WIDTH));
     }
 
@@ -1421,11 +1761,10 @@ public class ConsoleUI {
         if (game.isAvailable()) {
             availability = "AVAILABLE";
         }
-        printFormatted(String.format("%-4d | %-6s | %-30s | %-10s | %8s | %5d | %-12s%n",
-            shownNumber, game.gameId,
-            fit(game.title, 30),
-            platformColor(game.platform), money(game.price), game.availableCopies,
-            availability));
+        printRecord("%-4s | %-6s | %-30s | %-10s | %8s | %5s | %-12s",
+            new String[] {String.valueOf(shownNumber), game.gameId, game.title, game.platform,
+                money(game.price), String.valueOf(game.availableCopies), availability},
+            new int[] {4, 6, 30, 10, 8, 5, 12});
     }
 
     void showGameNavigation() {
@@ -1507,7 +1846,10 @@ public class ConsoleUI {
         }
         int width = Math.min(GAME_TABLE_WIDTH, terminalWidth);
         currentWidth = width;
-        printLeftRight("Search: " + searchLabel, "Page: " + page + "/" + totalPages, width);
+        lightBox = false;
+        printLine(border(width, '='));
+        printLeftRightBox("Search: " + searchLabel, "Page: " + page + "/" + totalPages, width);
+        printLine(border(width, '='));
         String cartText = "";
         if (cart != null) {
             int copies = 0;
@@ -1516,13 +1858,17 @@ public class ConsoleUI {
             }
             cartText = "Cart: " + cart.size() + " games · " + copies + " copies";
         }
-        printLeftRight("Sort: " + sortNames[sortOption], cartText, width);
+        printLeftRightBox("Sort: " + sortNames[sortOption], cartText, width);
+        printLine(border(width, '='));
+        flushBorder(false);
+        printLine();
     }
 
-    private void printLeftRight(String left, String right, int width) {
-        int leftWidth = Math.max(0, width - right.length() - 2);
-        left = fit(left, leftWidth);
-        printLine(left + " ".repeat(width - left.length() - right.length()) + right);
+    private void printLeftRightBox(String left, String right, int width) {
+        int inner = width - 4;
+        right = fit(right, inner);
+        left = fit(left, Math.max(0, inner - right.length() - 1));
+        printLine("| " + left + " ".repeat(inner - left.length() - right.length()) + right + " |");
     }
 
     void showRentalDurationOptions() {
@@ -1566,8 +1912,7 @@ public class ConsoleUI {
     void showSubmittedQueueHeader() {
         printLine();
         printLine(tableLine(ConsoleUI.QUEUE_TABLE_WIDTH));
-        printFormatted(String.format("%-8s | %-30s | %-10s | %5s | %8s%n",
-            "QUEUE #", "GAME TITLE", "PLATFORM", "QTY", "POSITION"));
+        printRecord("%-8s | %-30s | %-10s | %5s | %8s", new String[] {"QUEUE #", "GAME TITLE", "PLATFORM", "QTY", "POSITION"}, new int[] {8, 30, 10, 5, 8});
         printLine(tableLine(ConsoleUI.QUEUE_TABLE_WIDTH));
     }
 
@@ -1576,37 +1921,31 @@ public class ConsoleUI {
         if (position > 0) {
             positionText = String.valueOf(position);
         }
-        printFormatted(String.format("%-8s | %-30s | %-10s | %5d | %8s%n",
-            queueLabel(request.queueNumber),
-            fit(request.game.title, 30),
-            platformColor(request.game.platform), request.quantity, positionText));
+        printRecord("%-8s | %-30s | %-10s | %5s | %8s",
+            new String[] {queueLabel(request.queueNumber), request.game.title,
+                request.game.platform, String.valueOf(request.quantity), positionText},
+            new int[] {8, 30, 10, 5, 8});
     }
 
     void showQueueRequestHeader() {
         printLine(tableLine(ConsoleUI.QUEUE_TABLE_WIDTH));
-        printFormatted(String.format("%-8s | %-30s | %-10s | %5s | %8s%n",
-            "QUEUE #", "GAME TITLE", "PLATFORM", "QTY", "POSITION"));
+        printRecord("%-8s | %-30s | %-10s | %5s | %8s", new String[] {"QUEUE #", "GAME TITLE", "PLATFORM", "QTY", "POSITION"}, new int[] {8, 30, 10, 5, 8});
         printLine(tableLine(ConsoleUI.QUEUE_TABLE_WIDTH));
     }
 
     void showHistoryTableHeader(int total, int start, int end) {
-        printLine("Showing " + (start + 1) + "-" + end + " of " + total + " rentals");
-        printLine();
         printLine(tableLine(ConsoleUI.HISTORY_TABLE_WIDTH));
-        printFormatted(String.format("%-8s | %-28s | %3s | %-21s | %-21s | %9s | %-10s%n",
-            "RENTAL #", "GAME TITLE", "QTY", "RENTED ON", "DUE ON", "AMOUNT", "STATUS"));
+        printRecord("%-8s | %-28s | %3s | %-21s | %-21s | %9s | %-10s", new String[] {"RENTAL #", "GAME TITLE", "QTY", "RENTED ON", "DUE ON", "AMOUNT", "STATUS"}, new int[] {8, 28, 3, 21, 21, 9, 10});
         printLine(tableLine(ConsoleUI.HISTORY_TABLE_WIDTH));
     }
 
     void showHistoryRow(Rental rental) {
-        printFormatted(String.format("%-8s | %-28s | %3d | %-21s | %-21s | %9s | %-10s%n",
-            rentalLabel(rental.rentalNumber),
-            fit(rental.game.title, 28),
-            rental.quantity, rental.checkoutDate.format(GameRentalSystem.TABLE_DATE_FORMAT),
-            rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT), money(rental.amount), statusColor(rental.status)));
+        printRecord("%-8s | %-28s | %3s | %-21s | %-21s | %9s | %-10s", new String[] {rentalLabel(rental.rentalNumber), rental.game.title, String.valueOf(rental.quantity),
+                rental.checkoutDate.format(GameRentalSystem.TABLE_DATE_FORMAT),
+                rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT), money(rental.amount), rental.status}, new int[] {8, 28, 3, 21, 21, 9, 10});
         if (rental.returnDate != null) {
             printLine("Returned: " + rental.returnDate.format(GameRentalSystem.TABLE_DATE_FORMAT)
-            + " | Days late: " + rental.daysLate + " | Recorded late fee: " + money(rental.lateFee));
+                + " | Days late: " + rental.daysLate + " | Recorded late fee: " + money(rental.lateFee));
         }
     }
 
@@ -1669,6 +2008,24 @@ public class ConsoleUI {
             + " days · " + money(service.calculateRentalCost(next.client, next.game, next.rentalDays, next.quantity));
     }
 
+    private ArrayList<Integer> checkoutPageStarts(ArrayList<RentalRequest> requests) {
+        int[] heights = new int[requests.size()];
+        for (int i = 0; i < requests.size(); i++) {
+            RentalRequest request = requests.get(i);
+            String title = "-";
+            String customer = "-";
+            if (request.game != null) {
+                title = request.game.title;
+            }
+            if (request.client != null) {
+                customer = request.client.username;
+            }
+            heights[i] = Math.max(wrappedLines(title, 17), wrappedLines(customer, 10));
+        }
+        return pageStarts(heights, 9, 31);
+    }
+
+
     void showCheckoutQueue(CheckoutQueue queue, RentalService service) {
         clearScreen();
         checkoutDisplay = true;
@@ -1676,17 +2033,34 @@ public class ConsoleUI {
         ArrayList<RentalRequest> planned = queue.previewReadyRequests();
         ArrayList<RentalRequest> requests = queue.getDisplayRequests(planned);
         int ready = planned.size();
+        ArrayList<Integer> starts = checkoutPageStarts(requests);
+        checkoutPages = starts.size() - 1;
+        checkoutPage = Math.min(checkoutPage, checkoutPages - 1);
+        int start = starts.get(checkoutPage);
+        int end = starts.get(checkoutPage + 1);
         java.util.LinkedHashMap<Game, Integer> stocks = new java.util.LinkedHashMap<>();
         printLine(border(currentWidth, '='));
-        checkoutRow("ADMIN > CHECKOUT           QUEUE " + requests.size() + "  READY " + ready
-            + "  WAITING " + (requests.size() - ready));
+        checkoutRow("ADMIN > CHECKOUT");
         printLine(border(currentWidth, '='));
+        flushBorder(false);
+        printLine();
+        printLine(border(currentWidth, '='));
+        checkoutRow("QUEUE " + requests.size() + "  READY " + ready
+            + "  WAITING " + (requests.size() - ready) + "   VIP streak "
+            + checkoutStreak(queue.vipStreak) + " " + queue.vipStreak + "/" + CheckoutQueue.VIP_BURST);
+        printLine(border(currentWidth, '='));
+        checkoutRow("Page: " + (checkoutPage + 1) + "/" + checkoutPages + " · Showing "
+            + (requests.isEmpty() ? 0 : start + 1) + "-" + end);
+        printLine(border(currentWidth, '='));
+        flushBorder(false);
+        printLine();
         if (requests.isEmpty()) {
             showEmptyState("The checkout queue is empty.");
         } else {
-            checkoutRow(String.format("%-5s%-7s%-5s%-10s%-17s%3s %4s %-7s%s",
+            printLine(tableLine(currentWidth));
+            printLine(String.format("%-5s%-7s%-5s%-10s%-17s%3s %4s %-7s%-21s",
                 "POS", "#", "PRI", "CUSTOMER", "GAME", "QTY", "DAYS", "STOCK", "STATUS"));
-            printLine(border(currentWidth, '-'));
+            printLine(tableLine(currentWidth));
             for (RentalRequest request : requests) {
                 String priority = "REG";
                 if (request.vip) {
@@ -1719,22 +2093,25 @@ public class ConsoleUI {
                     positionText = String.valueOf(position);
                     status = "READY";
                 }
-                checkoutRow(String.format("%-5s%-7s%-5s%-10s%-17s%3d %4d %-7s%s",
-                    positionText, queueLabel(request.queueNumber), priority, fit(customer, 9),
-                    fit(title, 16), request.quantity, request.rentalDays, stockText, status));
+                int index = requests.indexOf(request);
+                if (index >= start && index < end) {
+                    printRecord("%-5s%-7s%-5s%-10s%-17s%3s %4s %-7s%-21s",
+                        new String[] {positionText, queueLabel(request.queueNumber), priority, customer,
+                            title, String.valueOf(request.quantity), String.valueOf(request.rentalDays), stockText, status},
+                        new int[] {5, 7, 5, 10, 17, 3, 4, 7, 21});
+                }
             }
         }
-        printLine(border(currentWidth, '-'));
-        checkoutRow("VIP streak " + checkoutStreak(queue.vipStreak) + " " + queue.vipStreak + "/" + CheckoutQueue.VIP_BURST);
-        printLine(border(currentWidth, '='));
-        checkoutRow(checkoutNext(queue, service));
-        printLine(border(currentWidth, '='));
+        printLine(tableLine(currentWidth));
+        printLine(String.format("%-81s", fit(checkoutNext(queue, service), CHECKOUT_QUEUE_TABLE_WIDTH)));
         flushBorder(false);
         lastWasRow = false;
         showTapeInput();
     }
 
     void showCheckoutTapeFooter(GameRentalSystem.CheckoutSession session, CheckoutQueue queue, RentalService service) {
+        checkoutPages = checkoutPageStarts(queue.getDisplayRequests(queue.previewReadyRequests())).size() - 1;
+        checkoutPage = Math.min(checkoutPage, checkoutPages - 1);
         showSessionStatus(session, queue, service);
         showTapeInput();
     }
@@ -1803,6 +2180,7 @@ public class ConsoleUI {
         currentWidth = CHECKOUT_QUEUE_TABLE_WIDTH;
         showChoiceGroup(new String[] {"[ENTER] Approve", "[A] All"});
         showChoiceGroup(new String[] {"[V] Queue", "[R] Receipt"});
+        showPagination(checkoutPage, checkoutPages);
         showChoiceGroup(new String[] {"[C] Cancel #"});
         showChoiceGroup(new String[] {"[B] Dashboard"});
         inputBar("ENTER CHOICE", CHECKOUT_QUEUE_TABLE_WIDTH, "");
@@ -1942,6 +2320,8 @@ public class ConsoleUI {
 
     void endCheckoutDisplay() {
         checkoutDisplay = false;
+        checkoutPage = 0;
+        checkoutPages = 1;
     }
 
     void showQueueCancellationOptions() {
@@ -1977,10 +2357,13 @@ public class ConsoleUI {
 
     void showReturnSelectionList(ArrayList<Rental> rentals, int start, int end, int page, int pages, String keyword) {
         printHeader("ADMIN > RETURNS", "EARLIEST DUE DATE FIRST", RETURN_TABLE_WIDTH);
-        printLine("Page " + (page + 1) + " of " + pages);
+        String search = "None";
         if (!keyword.isEmpty()) {
-            printLine("Search: " + fit(keyword, RETURN_TABLE_WIDTH - 8));
+            search = keyword;
         }
+        showListStatus("Search: " + search + " · Page: " + (page + 1) + "/" + pages,
+            "Showing " + (rentals.isEmpty() ? 0 : start + 1) + "-" + end + " of " + rentals.size(),
+            RETURN_TABLE_WIDTH);
         if (rentals.isEmpty()) {
             showEmptyState("No matching active rentals.");
         } else {
@@ -1994,15 +2377,10 @@ public class ConsoleUI {
         if (!keyword.isEmpty()) {
             showNavigationOptions(new String[] {"[X] Clear Search"});
         }
-        if (page < pages - 1) {
-            showNavigationOptions(new String[] {"[N] Next Page"});
-        }
-        if (page > 0) {
-            showNavigationOptions(new String[] {"[P] Previous Page"});
-        }
+        showPagination(page, pages);
         showNavigationOptions(new String[] {"[B] Dashboard"});
         inputBar("SELECT RETURNS", RETURN_TABLE_WIDTH,
-                "Rows: 1,3,5 · Current page · Full quantities");
+                "Current page; full quantities.\nExample: 1,3,5");
     }
 
     void showReturnSearchPrompt() {
@@ -2061,55 +2439,37 @@ public class ConsoleUI {
     }
 
     void showReturnTableHeader(int total, int start, int end) {
-        printLine("Showing " + (start + 1) + "-" + end + " of " + total + " active rentals\n");
         printLine(tableLine(ConsoleUI.RETURN_TABLE_WIDTH));
-        printFormatted(String.format("%-4s | %-8s | %-14s | %-30s | %3s | %-21s%n",
-            "NO.", "RENTAL #", "CUSTOMER", "GAME TITLE", "QTY", "DUE DATE"));
+        printRecord("%-4s | %-8s | %-14s | %-30s | %3s | %-21s", new String[] {"NO.", "RENTAL #", "CUSTOMER", "GAME TITLE", "QTY", "DUE DATE"}, new int[] {4, 8, 14, 30, 3, 21});
         printLine(tableLine(ConsoleUI.RETURN_TABLE_WIDTH));
     }
 
     void showReturnRow(int shown, Rental rental) {
-        printFormatted(String.format("%-4d | %-8s | %-14s | %-30s | %3d | %-21s%n",
-            shown, rentalLabel(rental.rentalNumber),
-            fit(rental.client.username, 14),
-            fit(rental.game.title, 30),
-            rental.quantity, rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT)));
+        printRecord("%-4s | %-8s | %-14s | %-30s | %3s | %-21s", new String[] {String.valueOf(shown), rentalLabel(rental.rentalNumber), rental.client.username, rental.game.title,
+                String.valueOf(rental.quantity), rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT)}, new int[] {4, 8, 14, 30, 3, 21});
     }
 
     void showActiveRentalHeader(int total, int start, int end) {
-        printLine("Showing " + (start + 1) + "-" + end + " of " + total + " rentals");
-        printLine();
         printLine(tableLine(ConsoleUI.ACTIVE_TABLE_WIDTH));
-        printFormatted(String.format("%-8s | %-14s | %-28s | %-10s | %3s | %-21s | %-10s%n",
-            "RENTAL #", "CUSTOMER", "GAME TITLE", "PLATFORM", "QTY", "DUE DATE", "STATUS"));
+        printRecord("%-8s | %-14s | %-28s | %-10s | %3s | %-21s | %-10s", new String[] {"RENTAL #", "CUSTOMER", "GAME TITLE", "PLATFORM", "QTY", "DUE DATE", "STATUS"}, new int[] {8, 14, 28, 10, 3, 21, 10});
         printLine(tableLine(ConsoleUI.ACTIVE_TABLE_WIDTH));
     }
 
     void showActiveRentalRow(Rental rental) {
-        printFormatted(String.format("%-8s | %-14s | %-28s | %-10s | %3d | %-21s | %-10s%n",
-            rentalLabel(rental.rentalNumber),
-            fit(rental.client.username, 14),
-            fit(rental.game.title, 28),
-            platformColor(rental.game.platform), rental.quantity,
-            rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT), statusColor(rental.status)));
+        printRecord("%-8s | %-14s | %-28s | %-10s | %3s | %-21s | %-10s", new String[] {rentalLabel(rental.rentalNumber), rental.client.username, rental.game.title, rental.game.platform,
+                String.valueOf(rental.quantity), rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT), rental.status}, new int[] {8, 14, 28, 10, 3, 21, 10});
     }
 
     void showOverdueRentalHeader(int total, int start, int end) {
-        printLine("Showing " + (start + 1) + "-" + end + " of " + total + " overdue rentals");
-        printLine();
         printLine(tableLine(ConsoleUI.OVERDUE_TABLE_WIDTH));
-        printFormatted(String.format("%-8s | %-14s | %-28s | %3s | %-21s | %9s | %9s%n",
-            "RENTAL #", "CUSTOMER", "GAME TITLE", "QTY", "DUE DATE", "DAYS LATE", "LATE FEE"));
+        printRecord("%-8s | %-14s | %-28s | %3s | %-21s | %9s | %9s", new String[] {"RENTAL #", "CUSTOMER", "GAME TITLE", "QTY", "DUE DATE", "DAYS LATE", "LATE FEE"}, new int[] {8, 14, 28, 3, 21, 9, 9});
         printLine(tableLine(ConsoleUI.OVERDUE_TABLE_WIDTH));
     }
 
     void showOverdueRentalRow(double lateFee, Rental rental, long daysOverdue) {
-        printFormatted(String.format("%-8s | %-14s | %-28s | %3d | %-21s | %9d | %9s%n",
-            rentalLabel(rental.rentalNumber),
-            fit(rental.client.username, 14),
-            fit(rental.game.title, 28),
-            rental.quantity, rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT), daysOverdue,
-            money(lateFee)));
+        printRecord("%-8s | %-14s | %-28s | %3s | %-21s | %9s | %9s", new String[] {rentalLabel(rental.rentalNumber), rental.client.username, rental.game.title,
+                String.valueOf(rental.quantity), rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT),
+                String.valueOf(daysOverdue), money(lateFee)}, new int[] {8, 14, 28, 3, 21, 9, 9});
     }
 
     void showEarliestDueRental(Rental top) {
@@ -2118,18 +2478,21 @@ public class ConsoleUI {
     }
 
     void showAuditHeader(int total, int start, int end) {
-        printLine("Showing " + (start + 1) + "-" + end + " of " + total + " records");
-        printFormatted(String.format("%-13s | %-10s | %-58s%n", "DATE", "TIME", "ACTION"));
+        printLine(tableLine(AUDIT_TABLE_WIDTH));
+        printRecord("%-13s | %-10s | %-58s", new String[] {"DATE", "TIME", "ACTION"}, new int[] {13, 10, 58});
         printLine(tableLine(ConsoleUI.AUDIT_TABLE_WIDTH));
     }
 
     void showAuditRow(LocalDateTime stamp, String[] parts) {
-        printFormatted(String.format("%-13s | %-10s | %-58s%n",
-            stamp.format(GameRentalSystem.LOG_DISPLAY_DATE), stamp.format(GameRentalSystem.LOG_DISPLAY_TIME), fit(parts[1], 58)));
+        printRecord("%-13s | %-10s | %-58s",
+            new String[] {stamp.format(GameRentalSystem.LOG_DISPLAY_DATE),
+                stamp.format(GameRentalSystem.LOG_DISPLAY_TIME), parts[1]}, new int[] {13, 10, 58});
+        printLine();
     }
 
     void showLegacyAuditRow(String entry) {
-        printFormatted(String.format("%-13s | %-10s | %-58s%n", "", "", fit(entry, 58)));
+        printRecord("%-13s | %-10s | %-58s", new String[] {"", "", entry}, new int[] {13, 10, 58});
+        printLine();
     }
 
     void showAddGameInstructions() {

@@ -12,5 +12,7 @@ $sources = Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.java' | Select-Ob
 if ($LASTEXITCODE -ne 0) { throw 'Java compilation failed.' }
 $terminalColumns = [Console]::WindowWidth
 if ($terminalColumns -lt 40) { $terminalColumns = 120 }
-& java "-Dfile.encoding=UTF-8" "-Dstdout.encoding=UTF-8" "-Dq2p.width=$terminalColumns" ("-Dq2p.dataDir=" + (Join-Path $PSScriptRoot 'data')) -cp $buildFolder Main
+$terminalRows = [Console]::WindowHeight
+if ($terminalRows -lt 20) { $terminalRows = 50 }
+& java "-Dfile.encoding=UTF-8" "-Dstdout.encoding=UTF-8" "-Dq2p.width=$terminalColumns" "-Dq2p.height=$terminalRows" ("-Dq2p.dataDir=" + (Join-Path $PSScriptRoot 'data')) -cp $buildFolder Main
 if ($LASTEXITCODE -ne 0) { throw 'QUEUE2PLAY stopped because of a data or startup error. Read the message above.' }

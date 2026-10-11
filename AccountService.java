@@ -238,6 +238,9 @@ class AccountService {
                 value = ui.readText(ui.prompt()).trim();
             }
             if (step == 1 && !editing && (value.equalsIgnoreCase("B") || value.equals("0"))) {
+                if (!fullName.isEmpty() && !cancelRegistration()) {
+                    continue;
+                }
                 return;
             }
             if ((step > 1 || editing) && value.equalsIgnoreCase("C")) {

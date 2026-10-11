@@ -169,3 +169,33 @@
 2026-10-11 17:13:11|ADMIN|Decreased stock: Minecraft (Xbox) 6 -> 5
 2026-10-11 17:29:06|EVENT|Login: admin (ADMIN)
 2026-10-11 17:34:10|ADMIN|Added game: MLBB (Nintendo)
+2026-10-11 17:52:45|EVENT|Failed login attempt for account: admin
+2026-10-11 17:52:49|EVENT|Login: admin (ADMIN)
+2026-10-11 17:55:24|ADMIN|Processed checkout: DLT - Spider-Man 2 x1
+2026-10-11 17:55:24|ADMIN|Processed checkout: DLT - Minecraft x1
+2026-10-11 17:55:24|ADMIN|Processed checkout: DLT - Minecraft x1
+2026-10-11 17:55:24|ADMIN|Processed checkout: juan - Minecraft x5
+2026-10-11 17:56:12|EVENT|Login: gerbs (CLIENT)
+2026-10-11 17:56:29|EVENT|Queue request #030: gerbs - test x1 (1 day(s))
+2026-10-11 17:56:43|EVENT|Login: admin (ADMIN)
+2026-10-11 17:57:31|ADMIN|Processed checkout: gerbs - test x1
+2026-10-11 18:13:14|EVENT|Failed login attempt for account: gerbs
+2026-10-11 18:13:58|EVENT|Login: gerbs (CLIENT)
+2026-10-11 18:15:29|EVENT|Login: admin (ADMIN)
+2026-10-11 18:16:54|EVENT|Login: admin (ADMIN)
+2026-10-11 18:17:24|ADMIN|Processed return: gerbs - Spider-Man 2 x1; days late 0; fee $0.00
+2026-10-11 18:17:24|ADMIN|Processed return: DLT - Spider-Man 2 x1; days late 0; fee $0.00
+2026-10-11 18:17:24|ADMIN|Processed return: DLT - Minecraft x1; days late 0; fee $0.00
+2026-10-11 18:17:24|ADMIN|Processed return: DLT - Minecraft x1; days late 0; fee $0.00
+2026-10-11 18:17:24|ADMIN|Processed return: juan - Minecraft x5; days late 0; fee $0.00
+2026-10-11 18:17:24|ADMIN|Processed return: gerbs - test x1; days late 0; fee $0.00
+2026-10-11 18:21:56|EVENT|Login: gerbs (CLIENT)
+2026-10-11 18:22:28|EVENT|Login: admin (ADMIN)
+2026-10-11 18:26:58|EVENT|Login: juan (CLIENT)
+2026-10-11 18:33:17|EVENT|Failed login attempt for account: gerbs
+2026-10-11 18:33:23|EVENT|Login: gerbs (CLIENT)
+2026-10-11 18:42:49|EVENT|Login: gerbs (CLIENT)
+2026-10-11 18:44:00|EVENT|Queue request #031: gerbs - Spider-Man 2 x1 (1 day(s))
+2026-10-11 18:44:13|EVENT|Login: admin (ADMIN)
+2026-10-11 18:44:23|ADMIN|Processed checkout: gerbs - Spider-Man 2 x1
+2026-10-11 18:47:08|EVENT|Login: admin (ADMIN)
