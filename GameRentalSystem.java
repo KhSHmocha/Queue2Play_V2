@@ -19,6 +19,7 @@ public class GameRentalSystem {
     static final double MAX_RENTAL_PRICE = 10.00;
     static final int NAV_CANCEL = -100;
     static final int NAV_MAIN_MENU = -101;
+    static final int NAV_FINISH_SELECTION = -102;
     static final double LATE_FEE_PER_DAY = 1.00;
     static final double VIP_DISCOUNT = 0.10;
     static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("MMM dd, yyyy | hh:mm a");
@@ -60,6 +61,56 @@ public class GameRentalSystem {
     int nextQueueNumber = 1;
     int nextRentalNumber = 1;
     boolean dashboardReturnRequested = false;
+    private String selectedRentalPlatform = "";
+    private String rentalSelectionDestination = "Dashboard";
+
+    private boolean confirmRentalDashboard(LinkedHashMap<Game, Integer> cart) {
+        if (cart != null && !cart.isEmpty() && !ui.confirmDiscardCart()) {
+            return false;
+        }
+        requestDashboardReturn();
+        return true;
+    }
+
+    private int parseMenuChoice(String text) {
+        if (text.equalsIgnoreCase("B")) {
+            return 0;
+        }
+        return Integer.parseInt(text);
+    }
+
+    private int readMenuChoice(String exitKey) {
+        String text = ui.readText(ui.prompt());
+        if (text.equalsIgnoreCase(exitKey)) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(text);
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    // Empty screens wait for a named destination instead of disappearing.
+    private void waitForScreenNavigation(String destination, boolean allowDashboard) {
+        while (true) {
+            if (allowDashboard) {
+                ui.showNavigationOptions(new String[] {"[B] " + destination, "[M] Dashboard"});
+            } else {
+                ui.showNavigationOptions(new String[] {"[B] " + destination});
+            }
+            ui.inputBar("ENTER CHOICE");
+            String choice = ui.readText(ui.prompt());
+            if (choice.equalsIgnoreCase("B") || choice.equals("0")) {
+                return;
+            }
+            if (allowDashboard && choice.equalsIgnoreCase("M")) {
+                requestDashboardReturn();
+                return;
+            }
+            ui.error("Use the displayed navigation key.");
+        }
+    }
 
     GameRentalSystem() {
         dataStore = new RentalDataStore(this);
@@ -100,7 +151,7 @@ public class GameRentalSystem {
         boolean running = true;
         while (running) {
             ui.showMainMenu();
-            int choice = ui.readNumber(ui.prompt());
+            int choice = readMenuChoice("Q");
 
             try {
                 if (choice == 1) {
@@ -120,7 +171,7 @@ public class GameRentalSystem {
                         running = false;
                     }
                 } else {
-                    ui.error("Invalid choice. Please enter 1, 2, or 0.");
+                    ui.error("Invalid choice. Use 1 to log in, 2 to register, or Q to exit.");
                 }
             } catch (StorageException e) {
                 ui.error(e.getMessage());
@@ -165,8 +216,16 @@ public class GameRentalSystem {
             int start = page * GAME_PAGE_SIZE;
             int end = Math.min(start + GAME_PAGE_SIZE, list.size());
 
-            ui.printHeader(title, ConsoleUI.GAME_TABLE_WIDTH);
-            ui.showCatalogState(keyword, sortOption, page + 1, totalPages);
+            String heading = title;
+            if (client != null) {
+                heading = "CLIENT > RENT GAMES > " + selectedRentalPlatform;
+            }
+            ui.printHeader(heading, ConsoleUI.GAME_TABLE_WIDTH);
+            if (client != null) {
+                ui.showCatalogState(keyword, sortOption, page + 1, totalPages, cart);
+            } else {
+                ui.showCatalogState(keyword, sortOption, page + 1, totalPages);
+            }
             if (list.isEmpty()) {
                 ui.showEmptyState("No games found. Use S to search again or X to clear search.");
             } else {
@@ -176,17 +235,20 @@ public class GameRentalSystem {
                 }
                 ui.info(ui.tableLine(ConsoleUI.GAME_TABLE_WIDTH));
             }
-            ui.showGameNavigation();
-            if (selectable) {
-                ui.info("Enter a displayed game number to select it.");
-            }
+            ui.showGameNavigation(page, totalPages, keyword, selectable, cart != null && !cart.isEmpty(), end - start);
             ui.inputBar("ENTER CHOICE", ConsoleUI.GAME_TABLE_WIDTH);
             String choice = ui.readText(ui.prompt(ConsoleUI.GAME_TABLE_WIDTH));
 
             if (choice.equalsIgnoreCase("M")) {
+                if (client != null && !confirmRentalDashboard(cart)) {
+                    continue;
+                }
                 requestDashboardReturn();
                 return null;
-            } else if (choice.equals("0")) {
+            } else if (choice.equalsIgnoreCase("F") && client != null && !cart.isEmpty()) {
+                selectedQuantity[0] = NAV_FINISH_SELECTION;
+                return null;
+            } else if ((choice.equalsIgnoreCase("B") || choice.equals("0"))) {
                 return null;
             } else if (choice.equalsIgnoreCase("N")) {
                 if (page < totalPages - 1) {
@@ -203,26 +265,36 @@ public class GameRentalSystem {
             } else if (choice.equalsIgnoreCase("X")) {
                 keyword = "";
                 page = 0;
-            } else if (choice.equalsIgnoreCase("O")) {
+            } else if (choice.equalsIgnoreCase("T")) {
                 sortOption = (sortOption + 1) % 5;
                 page = 0;
             } else if (choice.equalsIgnoreCase("S")) {
-                ui.showNavigationOptions(ConsoleUI.GAME_TABLE_WIDTH, new String[] {"[0] Back", "[M] Dashboard"});
-                ui.inputBar("SEARCH GAME", ConsoleUI.GAME_TABLE_WIDTH);
-                String searchText = ui.readText(ui.prompt(ConsoleUI.GAME_TABLE_WIDTH));
-                if (searchText.equalsIgnoreCase("M")) {
-                    requestDashboardReturn();
-                    return null;
+                String dashboard = "[M] Dashboard";
+                if (client != null && !cart.isEmpty()) {
+                    dashboard = "[M] Discard Cart / Dashboard";
                 }
-                if (searchText.equals("0")) {
-                    continue;
+                while (true) {
+                    ui.showNavigationOptions(ConsoleUI.GAME_TABLE_WIDTH, new String[] {"[B] Game List", dashboard});
+                    ui.inputBar("SEARCH GAME", ConsoleUI.GAME_TABLE_WIDTH);
+                    String searchText = ui.readText(ui.prompt(ConsoleUI.GAME_TABLE_WIDTH));
+                    if (searchText.equalsIgnoreCase("M")) {
+                        if (client != null && !confirmRentalDashboard(cart)) {
+                            continue;
+                        }
+                        requestDashboardReturn();
+                        return null;
+                    }
+                    if (searchText.equalsIgnoreCase("B") || searchText.equals("0")) {
+                        break;
+                    }
+                    if (searchText.isEmpty()) {
+                        ui.error("Search text cannot be empty.");
+                        continue;
+                    }
+                    keyword = searchText;
+                    page = 0;
+                    break;
                 }
-                if (searchText.isEmpty()) {
-                    ui.error("Search text cannot be empty.");
-                    continue;
-                }
-                keyword = searchText;
-                page = 0;
             } else if (selectable) {
                 try {
                     int number = Integer.parseInt(choice);
@@ -247,23 +319,43 @@ public class GameRentalSystem {
                     ui.error("Invalid choice.");
                 }
             } else {
-                ui.error("Use S, X, O, N, P, 0, or M.");
+                ui.error("Use S, X, T, N, P, B, or M.");
             }
         }
     }
     // Shows the platform menu. Returns "ALL", "PS5", "Xbox", "Nintendo" or "BACK"
     String choosePlatform(String heading) {
+        return choosePlatform(heading, null);
+    }
+
+    private String choosePlatform(String heading, LinkedHashMap<Game, Integer> cart) {
+        String destination = "Dashboard";
+        if (heading.startsWith("ADMIN")) {
+            destination = "Inventory";
+        } else if (heading.contains("RENT GAMES")) {
+            destination = rentalSelectionDestination;
+        }
         while (true) {
-            ui.showPlatformMenu(heading);
+            if (cart == null) {
+                ui.showPlatformMenu(heading, destination);
+            } else {
+                ui.showPlatformMenu(heading, destination, !cart.isEmpty());
+            }
             String input = ui.readText(ui.prompt());
 
             if (input.equalsIgnoreCase("M")) {
+                if (cart != null && !confirmRentalDashboard(cart)) {
+                    continue;
+                }
                 requestDashboardReturn();
                 return "BACK";
             }
+            if (input.equalsIgnoreCase("F") && cart != null && !cart.isEmpty()) {
+                return "FINISH";
+            }
 
             try {
-                int choice = Integer.parseInt(input);
+                int choice = parseMenuChoice(input);
                 if (choice == 1) {
                     return "ALL";
                 }
@@ -277,12 +369,15 @@ public class GameRentalSystem {
                     return "Nintendo";
                 }
                 if (choice == 0) {
+                    if (cart != null && !cart.isEmpty() && destination.equals("Dashboard") && !confirmRentalDashboard(cart)) {
+                        continue;
+                    }
                     return "BACK";
                 }
             } catch (NumberFormatException e) {
                 // handled below
             }
-            ui.error("Invalid choice. Please enter 1, 2, 3, 4, 0, or M.");
+            ui.error("Invalid choice. Please enter 1, 2, 3, 4, B, or M.");
         }
     }
 
@@ -304,7 +399,7 @@ public class GameRentalSystem {
         while (loggedIn) {
             clearDashboardReturnRequest();
             ui.showClientMenu(client);
-            int choice = ui.readNumber(ui.prompt());
+            int choice = readMenuChoice("L");
             try {
                 if (choice == 1) {
                     browseGames();
@@ -324,7 +419,7 @@ public class GameRentalSystem {
                         loggedIn = false;
                     }
                 } else {
-                    ui.error("Invalid choice. Please enter a number from the menu.");
+                    ui.error("Invalid choice. Choose a displayed option.");
                 }
             } catch (StorageException e) {
                 ui.error(e.getMessage());
@@ -348,7 +443,7 @@ public class GameRentalSystem {
 
             int choice;
             try {
-                choice = Integer.parseInt(input);
+                choice = parseMenuChoice(input);
             } catch (NumberFormatException e) {
                 ui.error("Invalid choice.");
                 continue;
@@ -365,7 +460,7 @@ public class GameRentalSystem {
             } else if (choice == 0) {
                 return;
             } else {
-                ui.error("Invalid choice. Please enter a number from the menu.");
+                ui.error("Invalid choice. Choose a displayed option.");
             }
 
             if (isDashboardReturnRequested()) {
@@ -377,11 +472,21 @@ public class GameRentalSystem {
     // Check existing rentals, requests, and the per-game quantity limit.
     Game chooseOneGame(User client, LinkedHashMap<Game, Integer> cart, int[] selectedQuantity) {
         while (true) {
-            String platform = choosePlatform("CLIENT > RENT GAMES > SELECT PLATFORM");
+            if (selectedRentalPlatform.isEmpty()) {
+                selectedRentalPlatform = choosePlatform("CLIENT > RENT GAMES > SELECT PLATFORM", cart);
+            }
+            String platform = selectedRentalPlatform;
             if (isDashboardReturnRequested()) {
                 return null;
             }
             if (platform.equals("BACK")) {
+                selectedRentalPlatform = "";
+                return null;
+            }
+
+            if (platform.equals("FINISH")) {
+                selectedRentalPlatform = "";
+                selectedQuantity[0] = NAV_FINISH_SELECTION;
                 return null;
             }
 
@@ -393,6 +498,10 @@ public class GameRentalSystem {
             if (game != null) {
                 return game;
             }
+            if (selectedQuantity[0] == NAV_FINISH_SELECTION) {
+                return null;
+            }
+            selectedRentalPlatform = "";
         }
     }
 
@@ -442,13 +551,13 @@ public class GameRentalSystem {
                 continue;
             }
             if (input.equalsIgnoreCase("M")) {
-                if (ui.askYesNo("Return to Dashboard and discard this rental transaction?")) {
+                if (ui.confirmDiscardCart()) {
                     requestDashboardReturn();
                     return NAV_MAIN_MENU;
                 }
                 continue;
             }
-            if (input.equals("0")) {
+            if ((input.equalsIgnoreCase("B") || input.equals("0"))) {
                 return 0;
             }
 
@@ -467,7 +576,7 @@ public class GameRentalSystem {
                     return quantity;
                 }
             } catch (NumberFormatException e) {
-                ui.error("Enter a whole number, 0, C, or M.");
+                ui.error("Enter a whole number, B, or M.");
             }
         }
     }
@@ -484,6 +593,9 @@ public class GameRentalSystem {
                 return NAV_MAIN_MENU;
             }
             if (game == null) {
+                if (selectedQuantity[0] == NAV_FINISH_SELECTION) {
+                    return 1;
+                }
                 return 0;
             }
 
@@ -512,9 +624,13 @@ public class GameRentalSystem {
 
     // Returns the number of rental days, or 0 if the client goes back.
     int chooseRentalDays() {
+        return chooseRentalDays("Select Game");
+    }
+
+    int chooseRentalDays(String previousScreen) {
         while (true) {
             ui.printHeader("SELECT RENTAL DURATION");
-            ui.showRentalDurationOptions();
+            ui.showRentalDurationOptions(previousScreen);
             ui.inputBar("ENTER CHOICE");
 
             String input = ui.readText(ui.prompt());
@@ -525,7 +641,7 @@ public class GameRentalSystem {
                 continue;
             }
             if (input.equalsIgnoreCase("M")) {
-                if (ui.askYesNo("Return to Dashboard and discard this rental transaction?")) {
+                if (ui.confirmDiscardCart()) {
                     requestDashboardReturn();
                     return NAV_MAIN_MENU;
                 }
@@ -534,7 +650,7 @@ public class GameRentalSystem {
 
             int choice;
             try {
-                choice = Integer.parseInt(input);
+                choice = parseMenuChoice(input);
             } catch (NumberFormatException e) {
                 ui.error("Invalid choice.");
                 continue;
@@ -554,7 +670,7 @@ public class GameRentalSystem {
             }
             if (choice == 4) {
                 while (true) {
-                    ui.showNavigationOptions(new String[] {"[0] Back", "[C] Cancel Transaction", "[M] Dashboard"});
+                    ui.showNavigationOptions(new String[] {"[B] Rental Duration", "[M] Discard Cart / Dashboard"});
                     ui.inputBar("RENTAL DURATION");
                     String daysInput = ui.readText(ui.prompt());
                     if (daysInput.equalsIgnoreCase("C")) {
@@ -564,13 +680,13 @@ public class GameRentalSystem {
                         continue;
                     }
                     if (daysInput.equalsIgnoreCase("M")) {
-                        if (ui.askYesNo("Return to Dashboard and discard this rental transaction?")) {
+                        if (ui.confirmDiscardCart()) {
                             requestDashboardReturn();
                             return NAV_MAIN_MENU;
                         }
                         continue;
                     }
-                    if (daysInput.equals("0")) {
+                    if ((daysInput.equalsIgnoreCase("B") || daysInput.equals("0"))) {
                         break;
                     }
                     try {
@@ -585,7 +701,7 @@ public class GameRentalSystem {
                     }
                 }
             } else {
-                ui.error("Invalid choice. Please enter a number from the menu.");
+                ui.error("Invalid choice. Choose a displayed option.");
             }
         }
     }
@@ -621,7 +737,7 @@ public class GameRentalSystem {
                 continue;
             }
             if (input.equalsIgnoreCase("M")) {
-                if (ui.askYesNo("Return to Dashboard and discard this rental transaction?")) {
+                if (ui.confirmDiscardCart()) {
                     requestDashboardReturn();
                     return NAV_MAIN_MENU;
                 }
@@ -630,19 +746,20 @@ public class GameRentalSystem {
 
             int choice;
             try {
-                choice = Integer.parseInt(input);
+                choice = parseMenuChoice(input);
             } catch (NumberFormatException e) {
                 ui.error("Invalid choice.");
                 continue;
             }
 
             if (choice == 1) {
+                rentalSelectionDestination = "Edit Order";
                 int status = addGamesToCart(client, cart);
                 if (status == NAV_CANCEL || status == NAV_MAIN_MENU) {
                     return status;
                 }
             } else if (choice == 2) {
-                ui.showNavigationOptions(ConsoleUI.EDIT_ORDER_TABLE_WIDTH, new String[] {"[0] Back", "[C] Cancel Transaction", "[M] Dashboard"});
+                ui.showNavigationOptions(ConsoleUI.EDIT_ORDER_TABLE_WIDTH, new String[] {"[B] Edit Order", "[M] Discard Cart / Dashboard"});
                 ui.inputBar("LINE NUMBER", ConsoleUI.EDIT_ORDER_TABLE_WIDTH);
                 String removeInput = ui.readText(ui.prompt(ConsoleUI.EDIT_ORDER_TABLE_WIDTH));
                 if (removeInput.equalsIgnoreCase("C")) {
@@ -652,14 +769,14 @@ public class GameRentalSystem {
                     continue;
                 }
                 if (removeInput.equalsIgnoreCase("M")) {
-                    if (ui.askYesNo("Return to Dashboard and discard this rental transaction?")) {
+                    if (ui.confirmDiscardCart()) {
                         requestDashboardReturn();
                         return NAV_MAIN_MENU;
                     }
                     continue;
                 }
                 try {
-                    int number = Integer.parseInt(removeInput);
+                    int number = parseMenuChoice(removeInput);
                     if (number >= 1 && number <= cart.size()) {
                         Game removed = new ArrayList<>(cart.keySet()).get(number - 1);
                         cart.remove(removed);
@@ -671,7 +788,7 @@ public class GameRentalSystem {
                     ui.error("Invalid line number.");
                 }
             } else if (choice == 3) {
-                int newDays = chooseRentalDays();
+                int newDays = chooseRentalDays("Edit Order");
                 if (newDays == NAV_CANCEL || newDays == NAV_MAIN_MENU) {
                     return newDays;
                 }
@@ -696,11 +813,14 @@ public class GameRentalSystem {
     }
 
     void placeInQueue(User client) {
+        selectedRentalPlatform = "";
+        rentalSelectionDestination = "Dashboard";
         LinkedHashMap<Game, Integer> cart = new LinkedHashMap<>();
         int step = 1;
         int days = RENTAL_DAYS;
         while (true) {
             if (step == 1) {
+                rentalSelectionDestination = "Dashboard";
                 int addStatus = addGamesToCart(client, cart);
                 if (addStatus == NAV_MAIN_MENU || addStatus == NAV_CANCEL || addStatus == 0) {
                     if (addStatus == NAV_CANCEL) {
@@ -730,7 +850,7 @@ public class GameRentalSystem {
             ui.inputBar("ENTER CHOICE", ConsoleUI.ORDER_TABLE_WIDTH);
             String choice = ui.readText(ui.prompt(ConsoleUI.ORDER_TABLE_WIDTH));
 
-            if (choice.equals("0")) {
+            if ((choice.equalsIgnoreCase("B") || choice.equals("0"))) {
                 step = 2;
             } else if (choice.equals("1")) {
                 if (!validateCartBeforeSubmission(client, cart)) {
@@ -738,7 +858,7 @@ public class GameRentalSystem {
                     continue;
                 }
                 break;
-            } else if (choice.equals("2")) {
+            } else if (choice.equalsIgnoreCase("E") || choice.equals("2")) {
                 int result = editOrder(client, cart, days);
                 if (result == NAV_CANCEL) {
                     ui.info("Rental transaction cancelled. No changes were made.");
@@ -754,12 +874,12 @@ public class GameRentalSystem {
                     return;
                 }
             } else if (choice.equalsIgnoreCase("M")) {
-                if (ui.askYesNo("Return to Dashboard and discard this rental transaction?")) {
+                if (ui.confirmDiscardCart()) {
                     requestDashboardReturn();
                     return;
                 }
             } else {
-                ui.error("Invalid choice. Please enter 1, 2, 0, C, or M.");
+                ui.error("Use 1 to confirm, E to edit, B for Rental Duration, or M for Dashboard.");
             }
         }
 
@@ -781,11 +901,15 @@ public class GameRentalSystem {
         ui.printHeader("CLIENT > RENT GAMES", "ORDER SUBMITTED", ConsoleUI.QUEUE_TABLE_WIDTH);
         ui.success("Requests saved. Stock will be checked at checkout.");
         ui.showSubmittedQueueHeader();
-        for (RentalRequest r : submitted) {
-            ui.showQueueRequestRow(checkoutQueue.getPosition(r), r);
+        ArrayList<RentalRequest> ready = checkoutQueue.previewReadyRequests();
+        for (RentalRequest r : checkoutQueue.getDisplayRequests(ready)) {
+            if (submitted.contains(r)) {
+                ui.showQueueRequestRow(ready.indexOf(r) + 1, r);
+            }
         }
         ui.info(ui.tableLine(ConsoleUI.QUEUE_TABLE_WIDTH));
         ui.finishScreen();
+        ui.waitForResultNavigation("", "Dashboard");
     }
     void cancelMyRequest(User client) {
         boolean choosingRequest = false;
@@ -794,14 +918,17 @@ public class GameRentalSystem {
             if (myRequests.isEmpty()) {
                 ui.printHeader("CLIENT > QUEUE REQUESTS", "MY QUEUE REQUESTS");
                 ui.showEmptyState("You have no pending queue requests.");
-                ui.finishScreen();
+                waitForScreenNavigation("Dashboard", false);
                 return;
             }
 
             ui.printHeader("CLIENT > QUEUE REQUESTS", "MY QUEUE REQUESTS", ConsoleUI.QUEUE_TABLE_WIDTH);
             ui.showQueueRequestHeader();
-            for (RentalRequest request : myRequests) {
-                ui.showQueueRequestRow(checkoutQueue.getPosition(request), request);
+            ArrayList<RentalRequest> ready = checkoutQueue.previewReadyRequests();
+            for (RentalRequest request : checkoutQueue.getDisplayRequests(ready)) {
+                if (myRequests.contains(request)) {
+                    ui.showQueueRequestRow(ready.indexOf(request) + 1, request);
+                }
             }
             ui.info(ui.tableLine(ConsoleUI.QUEUE_TABLE_WIDTH));
 
@@ -812,25 +939,25 @@ public class GameRentalSystem {
                     requestDashboardReturn();
                     return;
                 }
-                if (choice.equals("0")) {
+                if ((choice.equalsIgnoreCase("B") || choice.equals("0"))) {
                     return;
                 }
-                if (!choice.equals("1")) {
-                    ui.error("Invalid choice. Please enter 1, 0, or M.");
+                if (!choice.equalsIgnoreCase("C") && !choice.equals("1")) {
+                    ui.error("Invalid choice. Use C to cancel a request or B for Dashboard.");
                     continue;
                 }
                 choosingRequest = true;
                 continue;
             }
 
-            ui.showNavigationOptions(ConsoleUI.QUEUE_TABLE_WIDTH, new String[] {"[0] Back to My Requests", "[M] Dashboard"});
+            ui.showNavigationOptions(ConsoleUI.QUEUE_TABLE_WIDTH, new String[] {"[B] My Requests", "[M] Dashboard"});
             ui.inputBar("QUEUE NUMBER TO CANCEL", ConsoleUI.QUEUE_TABLE_WIDTH);
             String input = ui.readText(ui.prompt(ConsoleUI.QUEUE_TABLE_WIDTH));
             if (input.equalsIgnoreCase("M")) {
                 requestDashboardReturn();
                 return;
             }
-            if (input.equals("0")) {
+            if ((input.equalsIgnoreCase("B") || input.equals("0"))) {
                 choosingRequest = false;
                 continue;
             }
@@ -862,6 +989,7 @@ public class GameRentalSystem {
 
             if (checkoutQueue.getRequestsOf(client).isEmpty()) {
                 ui.finishScreen(ConsoleUI.QUEUE_TABLE_WIDTH);
+                ui.waitForResultNavigation("", "Dashboard");
                 return;
             }
             if (!ui.askYesNo("Do you want to cancel another queue request?")) {
@@ -874,7 +1002,7 @@ public class GameRentalSystem {
         if (client.rentalHistory.isEmpty()) {
             ui.printHeader("CLIENT > RENTAL HISTORY", "RENTAL HISTORY");
             ui.showEmptyState("You have no rental history yet.");
-            ui.finishScreen();
+            waitForScreenNavigation("Dashboard", false);
             return;
         }
 
@@ -912,7 +1040,7 @@ public class GameRentalSystem {
             else if (choice.equalsIgnoreCase("P") && page > 0) {
                 page--;
             }
-            else if (choice.equals("0")) {
+            else if ((choice.equalsIgnoreCase("B") || choice.equals("0"))) {
                 return;
             }
             else ui.error("Invalid choice.");
@@ -923,7 +1051,7 @@ public class GameRentalSystem {
         if (client.isVip()) {
             ui.printHeader("CLIENT > MEMBERSHIP", "VIP MEMBERSHIP");
             ui.showEmptyState("You are already a VIP member.");
-            ui.finishScreen();
+            waitForScreenNavigation("Dashboard", false);
             return;
         }
 
@@ -941,6 +1069,7 @@ public class GameRentalSystem {
                 accountService.saveAccounts();
                 ui.success("Upgrade successful! You are now a VIP member.");
                 ui.finishScreen();
+                ui.waitForResultNavigation("", "Dashboard");
                 return;
             } else if (choice.equalsIgnoreCase("C")) {
                 ui.info("VIP upgrade cancelled. No changes were made.");
@@ -959,7 +1088,7 @@ public class GameRentalSystem {
         while (loggedIn) {
             clearDashboardReturnRequest();
             ui.showAdminMenu();
-            int choice = ui.readNumber(ui.prompt());
+            int choice = readMenuChoice("L");
             try {
                 if (choice == 1) {
                     checkoutManagement(admin.username);
@@ -979,7 +1108,7 @@ public class GameRentalSystem {
                         loggedIn = false;
                     }
                 } else {
-                    ui.error("Invalid choice. Please enter a number from the menu.");
+                    ui.error("Invalid choice. Choose a displayed option.");
                 }
             } catch (StorageException e) {
                 ui.error(e.getMessage());
@@ -995,10 +1124,10 @@ public class GameRentalSystem {
                 viewActiveRentals();
             } else if (input.equals("2")) {
                 viewOverdueItems();
-            } else if (input.equals("0")) {
+            } else if ((input.equalsIgnoreCase("B") || input.equals("0"))) {
                 return;
             } else {
-                ui.error("Invalid choice. Please enter 1, 2, or 0.");
+                ui.error("Invalid choice. Please enter 1, 2, or B.");
             }
             if (isDashboardReturnRequested()) {
                 return;
@@ -1060,23 +1189,28 @@ public class GameRentalSystem {
         ui.showCheckoutQueue(checkoutQueue, rentalService);
         while (true) {
             String choice = ui.readText(ui.prompt(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH));
-            if (choice.equals("0") || choice.equalsIgnoreCase("M")) {
+            if ((choice.equalsIgnoreCase("B") || choice.equals("0")) || choice.equalsIgnoreCase("M")) {
                 if (!session.entries.isEmpty()) {
                     ui.showCheckoutReceipt(session, checkoutQueue);
                     ui.finishScreen(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH);
+                    ui.waitForResultNavigation("", "Dashboard");
                 }
                 if (choice.equalsIgnoreCase("M")) {
                     requestDashboardReturn();
                 }
                 return;
             }
-            if (choice.equalsIgnoreCase("Q")) {
+            if (choice.equalsIgnoreCase("V")) {
                 ui.showCheckoutQueue(checkoutQueue, rentalService);
                 continue;
             }
             if (choice.equalsIgnoreCase("R")) {
                 ui.showCheckoutReceipt(session, checkoutQueue);
                 ui.finishScreen(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH);
+                waitForScreenNavigation("Checkout", true);
+                if (isDashboardReturnRequested()) {
+                    return;
+                }
                 ui.showCheckoutQueue(checkoutQueue, rentalService);
                 continue;
             }
@@ -1090,10 +1224,18 @@ public class GameRentalSystem {
                 }
             } else if (choice.equalsIgnoreCase("A")) {
                 approveReadyBatch(session);
-            } else if (choice.equalsIgnoreCase("X")) {
+            } else if (choice.equalsIgnoreCase("C")) {
                 cancelSessionRequest(session);
+                if (isDashboardReturnRequested()) {
+                    if (!session.entries.isEmpty()) {
+                        ui.showCheckoutReceipt(session, checkoutQueue);
+                        ui.finishScreen(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH);
+                        ui.waitForResultNavigation("", "Dashboard");
+                    }
+                    return;
+                }
             } else {
-                ui.error("Use ENTER, A, X, Q, R, 0 or M.");
+                ui.error("Use ENTER, A, C, V, R, B or M.");
             }
             if (session.entries.size() > entriesBeforeAction) {
                 ui.showCheckoutTapeFooter(session, checkoutQueue, rentalService);
@@ -1103,37 +1245,8 @@ public class GameRentalSystem {
         }
     }
 
-    // Use the real queue policy on copied games; previews never reserve stock.
     ArrayList<RentalRequest> previewReadyCheckouts() {
-        CheckoutQueue previewQueue = new CheckoutQueue();
-        previewQueue.vipStreak = checkoutQueue.vipStreak;
-        LinkedHashMap<Game, Game> stockCopies = new LinkedHashMap<>();
-        for (RentalRequest request : checkoutQueue.getRequests()) {
-            if (!CheckoutQueue.validRequest(request)) {
-                continue;
-            }
-            Game copiedGame = stockCopies.get(request.game);
-            if (copiedGame == null && request.game != null) {
-                copiedGame = new Game(request.game.gameId, request.game.title, request.game.platform,
-                    request.game.price, request.game.availableCopies);
-                stockCopies.put(request.game, copiedGame);
-            }
-            RentalRequest copiedRequest = new RentalRequest(request.queueNumber, request.client, copiedGame);
-            copiedRequest.vip = request.vip;
-            copiedRequest.quantity = request.quantity;
-            copiedRequest.rentalDays = request.rentalDays;
-            previewQueue.enqueue(copiedRequest);
-        }
-        ArrayList<RentalRequest> planned = new ArrayList<>();
-        RentalRequest next = previewQueue.findNextEligibleRequest();
-        while (next != null) {
-            planned.add(checkoutQueue.findByNumber(next.queueNumber));
-            next.game.availableCopies -= next.quantity;
-            previewQueue.recordCheckout(next);
-            previewQueue.remove(next);
-            next = previewQueue.findNextEligibleRequest();
-        }
-        return planned;
+        return checkoutQueue.previewReadyRequests();
     }
 
     void approveReadyBatch(CheckoutSession session) {
@@ -1178,9 +1291,13 @@ public class GameRentalSystem {
     }
 
     void cancelSessionRequest(CheckoutSession session) {
-        ui.inputBar("QUEUE NUMBER TO CANCEL", ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH, "[0] Back");
+        ui.inputBar("QUEUE NUMBER TO CANCEL", ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH, "[B] Checkout   [M] Dashboard");
         String input = ui.readText(ui.prompt(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH));
-        if (input.equals("0")) {
+        if (input.equalsIgnoreCase("M")) {
+            requestDashboardReturn();
+            return;
+        }
+        if ((input.equalsIgnoreCase("B") || input.equals("0"))) {
             return;
         }
         RentalRequest request;
@@ -1224,111 +1341,162 @@ public class GameRentalSystem {
         return rental;
     }
 
-    Rental selectActiveRentalForReturn() {
-        ArrayList<Rental> rentals = rentalService.getRentalsByDueDate();
-        if (rentals.isEmpty()) {
-            return null;
+    ArrayList<Rental> searchReturnRentals(String keyword) {
+        ArrayList<Rental> matches = new ArrayList<>();
+        String search = keyword.trim().toLowerCase(java.util.Locale.ROOT);
+        for (Rental rental : rentalService.getRentalsByDueDate()) {
+            if (search.isEmpty() || rental.client.username.toLowerCase(java.util.Locale.ROOT).contains(search)
+                    || rental.client.fullName.toLowerCase(java.util.Locale.ROOT).contains(search)
+                    || rental.game.gameId.equalsIgnoreCase(search)
+                    || rental.game.title.toLowerCase(java.util.Locale.ROOT).contains(search)) {
+                matches.add(rental);
+            }
         }
+        return matches;
+    }
 
+    ArrayList<Rental> parseReturnSelection(ArrayList<Rental> rentals, int start, int end, String input) {
+        boolean[] chosen = new boolean[end - start];
+        String[] numbers = input.split(",", -1);
+        for (String text : numbers) {
+            int number;
+            try {
+                number = Integer.parseInt(text.trim());
+            } catch (NumberFormatException e) {
+                ui.error("Enter a row number or comma-separated numbers, such as 1,3,5.");
+                return null;
+            }
+            if (number < 1 || number > chosen.length) {
+                ui.error("Choose only row numbers displayed on this page.");
+                return null;
+            }
+            if (chosen[number - 1]) {
+                ui.error("Select each rental only once.");
+                return null;
+            }
+            chosen[number - 1] = true;
+        }
+        ArrayList<Rental> selected = new ArrayList<>();
+        // Read rows in their displayed due-date order, regardless of input order.
+        for (int i = 0; i < chosen.length; i++) {
+            if (chosen[i]) {
+                selected.add(rentals.get(start + i));
+            }
+        }
+        return selected;
+    }
+
+    ArrayList<Rental> selectActiveRentalsForReturn() {
         int page = 0;
-        int pageSize = 10;
-        int totalPages = (rentals.size() + pageSize - 1) / pageSize;
-
+        int pageSize = 9;
+        String keyword = "";
         while (true) {
+            if (activeRentals.isEmpty()) {
+                ui.printHeader("ADMIN > RETURNS", "ACTIVE RENTALS", ConsoleUI.RETURN_TABLE_WIDTH);
+                ui.showEmptyState("No active rentals.");
+                waitForScreenNavigation("Dashboard", false);
+                return null;
+            }
+            ArrayList<Rental> rentals = searchReturnRentals(keyword);
+            int totalPages = Math.max(1, (rentals.size() + pageSize - 1) / pageSize);
+            page = Math.min(page, totalPages - 1);
             int start = page * pageSize;
             int end = Math.min(start + pageSize, rentals.size());
-            ui.printHeader("ADMIN > RETURNS", "SELECT RENTAL TO RETURN", ConsoleUI.RETURN_TABLE_WIDTH);
-            ui.showReturnTableHeader(rentals.size(), start, end);
-
-            for (int i = start; i < end; i++) {
-                Rental rental = rentals.get(i);
-                int shown = i - start + 1;
-                ui.showReturnRow(shown, rental);
-            }
-            ui.info(ui.tableLine(ConsoleUI.RETURN_TABLE_WIDTH));
-
-            ui.info("");
-            if (page < totalPages - 1) {
-                ui.info("[N] Next Page");
-            }
-            if (page > 0) {
-                ui.info("[P] Previous Page");
-            }
-            ui.showBackToDashboard();
-            ui.inputBar("ENTER CHOICE", ConsoleUI.RETURN_TABLE_WIDTH);
-            String choice = ui.readText(ui.prompt(ConsoleUI.RETURN_TABLE_WIDTH));
-
-            if (choice.equalsIgnoreCase("N") && page < totalPages - 1) {
-                page++;
-            } else if (choice.equalsIgnoreCase("P") && page > 0) {
-                page--;
-            } else if (choice.equals("0")) {
+            ui.showReturnSelectionList(rentals, start, end, page, totalPages, keyword);
+            String choice = ui.readText(ui.prompt(ConsoleUI.RETURN_TABLE_WIDTH)).trim();
+            if ((choice.equalsIgnoreCase("B") || choice.equals("0"))) {
                 return null;
+            }
+            if (choice.equalsIgnoreCase("S")) {
+                ui.showReturnSearchPrompt();
+                String search = ui.readText(ui.prompt(ConsoleUI.RETURN_TABLE_WIDTH)).trim();
+                if (search.equalsIgnoreCase("M")) {
+                    requestDashboardReturn();
+                    return null;
+                }
+                if (search.equalsIgnoreCase("B")) {
+                    continue;
+                }
+                keyword = search;
+                page = 0;
+            } else if (choice.equalsIgnoreCase("X")) {
+                keyword = "";
+                page = 0;
+            } else if (choice.equalsIgnoreCase("N")) {
+                if (page < totalPages - 1) {
+                    page++;
+                } else {
+                    ui.error("There is no next page.");
+                }
+            } else if (choice.equalsIgnoreCase("P")) {
+                if (page > 0) {
+                    page--;
+                } else {
+                    ui.error("There is no previous page.");
+                }
             } else {
-                try {
-                    int number = Integer.parseInt(choice);
-                    if (number >= 1 && number <= end - start) {
-                        return rentals.get(start + number - 1);
-                    }
-                    ui.error("Invalid rental selection.");
-                } catch (NumberFormatException e) {
-                    ui.error("Invalid choice.");
+                ArrayList<Rental> selected = parseReturnSelection(rentals, start, end, choice);
+                if (selected != null) {
+                    return selected;
                 }
             }
         }
+    }
+
+    void completeSelectedReturns(ArrayList<Rental> selected, LocalDateTime returnedAt) {
+        RentalDataStore.require(selected != null && !selected.isEmpty() && returnedAt != null, "Select an active rental to return.");
+        LinkedHashMap<Game, Integer> restoredStocks = new LinkedHashMap<>();
+        ArrayList<Rental> checked = new ArrayList<>();
+        // Validate the whole selection before changing any rental or stock.
+        for (Rental rental : selected) {
+            RentalDataStore.require(rental != null && rental.status.equals("ACTIVE") && activeRentals.contains(rental)
+                    && !checked.contains(rental), "A selected rental is no longer active or was selected twice.");
+            RentalDataStore.require(!returnedAt.isBefore(rental.checkoutDate), "Invalid return date.");
+            int stock = rental.game.availableCopies;
+            if (restoredStocks.containsKey(rental.game)) {
+                stock = restoredStocks.get(rental.game);
+            }
+            int restored = Math.addExact(stock, rental.quantity);
+            RentalDataStore.require(restored <= MAX_GAME_STOCK, "Return would exceed total stock; correct inventory first.");
+            restoredStocks.put(rental.game, restored);
+            checked.add(rental);
+        }
+        for (Rental rental : selected) {
+            rentalService.completeReturn(rental, returnedAt);
+            logAdmin("Processed return: " + rental.client.username + " - " + rental.game.title
+                    + " x" + rental.quantity + "; days late " + rental.daysLate + "; fee " + ui.money(rental.lateFee));
+        }
+        // One recoverable commit saves the entire selected batch.
+        dataStore.saveData();
     }
 
     void processReturn() {
         while (true) {
-            Rental found = selectActiveRentalForReturn();
-            if (found == null) {
-                if (activeRentals.isEmpty()) {
-                    ui.printHeader("RETURNS");
-                    ui.showEmptyState("No active rentals.");
-                    ui.finishScreen();
-                }
+            ArrayList<Rental> selected = selectActiveRentalsForReturn();
+            if (selected == null) {
                 return;
             }
             LocalDateTime returnedAt = LocalDateTime.now();
-            int daysLate = RentalService.daysOverdue(found.dueDate, returnedAt);
-            double lateFee = rentalService.calculateLateFee(found, daysLate);
-            ui.printHeader("ADMIN > RETURNS", "CONFIRM RETURN");
-            ui.showReturnDetails(found);
-            ui.showReturnConfirmation(found, daysLate, lateFee);
-            String confirm = ui.readText(ui.prompt());
-            if (confirm.equals("0")) {
+            if (!ui.confirmSelectedReturns(selected, returnedAt, rentalService)) {
                 continue;
             }
-            if (confirm.equalsIgnoreCase("C")) {
-                return;
+            completeSelectedReturns(selected, returnedAt);
+            ui.showSelectedReturnResults(selected);
+            String previousDestination = "";
+            if (!activeRentals.isEmpty()) {
+                previousDestination = "Return List";
             }
-            if (confirm.equalsIgnoreCase("M")) {
-                requestDashboardReturn();
-                return;
-            }
-            if (!confirm.equals("1")) {
-                ui.error("Enter 1, 0, C, or M.");
-                continue;
-            }
-            rentalService.completeReturn(found, returnedAt);
-            logAdmin("Processed return: " + found.client.username + " - " + found.game.title
-                + " x" + found.quantity + "; days late " + daysLate + "; fee " + ui.money(lateFee));
-            dataStore.saveData();
-            ui.printHeader("ADMIN > RETURNS", "RETURN PROCESSED");
-            ui.success("Return and late fee saved. Payment collection is handled separately.");
-            ui.showReturnResult(found, daysLate, lateFee);
-            if (!ui.askYesNo("Process another return?")) {
+            if (!ui.waitForResultNavigation(previousDestination, "Dashboard")) {
                 return;
             }
         }
     }
-
     void viewActiveRentals() {
         ArrayList<Rental> rentals = rentalService.getRentalsByDueDate();
         if (rentals.isEmpty()) {
             ui.printHeader("ADMIN > ACTIVE RENTALS", "ACTIVE RENTALS");
             ui.showEmptyState("There are no active rentals.");
-            ui.finishScreen();
+            waitForScreenNavigation("Active Rentals", true);
             return;
         }
 
@@ -1352,7 +1520,7 @@ public class GameRentalSystem {
             if (page > 0) {
                 ui.info("[P] Previous Page");
             }
-            ui.showBackOptions();
+            ui.showNavigationOptions(new String[] {"[B] Active Rentals", "[M] Dashboard"});
             ui.inputBar("ENTER CHOICE", ConsoleUI.ACTIVE_TABLE_WIDTH);
             String choice = ui.readText(ui.prompt(ConsoleUI.ACTIVE_TABLE_WIDTH));
             if (choice.equalsIgnoreCase("M")) {
@@ -1364,7 +1532,7 @@ public class GameRentalSystem {
             else if (choice.equalsIgnoreCase("P") && page > 0) {
                 page--;
             }
-            else if (choice.equals("0")) {
+            else if ((choice.equalsIgnoreCase("B") || choice.equals("0"))) {
                 return;
             }
             else ui.error("Invalid choice.");
@@ -1383,7 +1551,7 @@ public class GameRentalSystem {
         if (rentals.isEmpty()) {
             ui.printHeader("ADMIN > ACTIVE RENTALS", "OVERDUE RENTALS");
             ui.showEmptyState("There are no overdue rentals.");
-            ui.finishScreen();
+            waitForScreenNavigation("Active Rentals", true);
             return;
         }
 
@@ -1410,7 +1578,7 @@ public class GameRentalSystem {
             if (page > 0) {
                 ui.info("[P] Previous Page");
             }
-            ui.showBackOptions();
+            ui.showNavigationOptions(new String[] {"[B] Active Rentals", "[M] Dashboard"});
             ui.inputBar("ENTER CHOICE", ConsoleUI.OVERDUE_TABLE_WIDTH);
 
             String choice = ui.readText(ui.prompt(ConsoleUI.OVERDUE_TABLE_WIDTH));
@@ -1423,7 +1591,7 @@ public class GameRentalSystem {
             else if (choice.equalsIgnoreCase("P") && page > 0) {
                 page--;
             }
-            else if (choice.equals("0")) {
+            else if ((choice.equalsIgnoreCase("B") || choice.equals("0"))) {
                 return;
             }
             else ui.error("Invalid choice.");
@@ -1434,7 +1602,7 @@ public class GameRentalSystem {
         if (auditLog.isEmpty()) {
             ui.printHeader("ADMIN > AUDIT LOG", "ADMIN AUDIT LOG");
             ui.showEmptyState("No actions have been recorded yet.");
-            ui.finishScreen();
+            waitForScreenNavigation("Dashboard", false);
             return;
         }
 
@@ -1482,7 +1650,7 @@ public class GameRentalSystem {
             else if (choice.equalsIgnoreCase("P") && page > 0) {
                 page--;
             }
-            else if (choice.equals("0")) {
+            else if ((choice.equalsIgnoreCase("B") || choice.equals("0"))) {
                 return;
             }
             else ui.error("Invalid choice.");
@@ -1499,7 +1667,7 @@ public class GameRentalSystem {
 
             int choice;
             try {
-                choice = Integer.parseInt(input);
+                choice = parseMenuChoice(input);
             } catch (NumberFormatException e) {
                 ui.error("Invalid choice.");
                 continue;
@@ -1516,13 +1684,22 @@ public class GameRentalSystem {
             } else if (choice == 0) {
                 return;
             } else {
-                ui.error("Invalid choice. Please enter 1, 2, 3, 4, or 0.");
+                ui.error("Invalid choice. Please enter 1, 2, 3, 4, or B.");
             }
 
             if (isDashboardReturnRequested()) {
                 return;
             }
         }
+    }
+
+    private boolean gameAlreadyExists(String title, String platform) {
+        for (Game game : games.values()) {
+            if (game.title.equalsIgnoreCase(title) && game.platform.equals(platform)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     void addGame() {
@@ -1532,19 +1709,45 @@ public class GameRentalSystem {
             double price = 0;
             int copies = 0;
             int step = 1;
+            boolean editing = false;
 
             while (true) {
+                if (step == 6) {
+                    ui.showGameEditMenu(title, platform, price, copies);
+                    String input = ui.readText(ui.prompt());
+                    if (input.equalsIgnoreCase("B") || input.equals("0")) {
+                        step = 5;
+                    } else if (input.equals("1") || input.equals("2") || input.equals("3") || input.equals("4")) {
+                        step = Integer.parseInt(input);
+                        editing = true;
+                    } else {
+                        ui.error("Choose 1, 2, 3, 4, or B for Game Summary.");
+                    }
+                    continue;
+                }
                 if (step == 1) {
-                    ui.printHeader("ADMIN > MANAGE INVENTORY > ADD GAME", "ADD GAME");
-                    ui.showAddGameInstructions();
-                    ui.inputBar("GAME TITLE");
+                    if (editing) {
+                        ui.showGameEditField(step, title, platform, price, copies);
+                    } else {
+                        ui.printHeader("ADMIN > MANAGE INVENTORY > ADD GAME", "ADD GAME");
+                        ui.showAddGameInstructions();
+                        ui.inputBar("GAME TITLE");
+                    }
                     String input = ui.readText(ui.prompt());
                     if (input.equalsIgnoreCase("M")) {
                         requestDashboardReturn();
                         return;
                     }
-                    if (input.equalsIgnoreCase("C") || input.equals("0")) {
+                    if (input.equalsIgnoreCase("C")) {
                         ui.info("Add-game transaction cancelled. No changes were made.");
+                        return;
+                    }
+                    if (input.equalsIgnoreCase("B") || input.equals("0")) {
+                        if (editing) {
+                            editing = false;
+                            step = 5;
+                            continue;
+                        }
                         return;
                     }
                     if (input.isEmpty()) {
@@ -1555,12 +1758,24 @@ public class GameRentalSystem {
                         ui.error("Use a title of 1-100 characters without control characters or the | symbol.");
                         continue;
                     }
+                    if (editing && gameAlreadyExists(input, platform)) {
+                        ui.error("That game already exists on " + platform + ". Update its stock instead.");
+                        continue;
+                    }
                     title = input;
                     step = 2;
+                    if (editing) {
+                        editing = false;
+                        step = 5;
+                    }
                 } else if (step == 2) {
-                    ui.printHeader("ADD GAME", "SELECT PLATFORM");
-                    ui.showPlatformOptions();
-                    ui.inputBar("ENTER CHOICE");
+                    if (editing) {
+                        ui.showGameEditField(step, title, platform, price, copies);
+                    } else {
+                        ui.printHeader("ADD GAME", "SELECT PLATFORM");
+                        ui.showPlatformOptions();
+                        ui.inputBar("ENTER CHOICE");
+                    }
                     String input = ui.readText(ui.prompt());
                     if (input.equalsIgnoreCase("M")) {
                         requestDashboardReturn();
@@ -1570,40 +1785,49 @@ public class GameRentalSystem {
                         ui.info("Add-game transaction cancelled. No changes were made.");
                         return;
                     }
-                    if (input.equals("0")) {
+                    if ((input.equalsIgnoreCase("B") || input.equals("0"))) {
                         step = 1;
+                        if (editing) {
+                            editing = false;
+                            step = 5;
+                        }
                         continue;
                     }
+                    String selectedPlatform;
                     if (input.equals("1")) {
-                        platform = "PS5";
+                        selectedPlatform = "PS5";
                     }
                     else if (input.equals("2")) {
-                        platform = "Xbox";
+                        selectedPlatform = "Xbox";
                     }
                     else if (input.equals("3")) {
-                        platform = "Nintendo";
+                        selectedPlatform = "Nintendo";
                     }
                     else {
                         ui.error("Invalid platform choice.");
                         continue;
                     }
 
-                    boolean duplicate = false;
-                    for (Game game : games.values()) {
-                        if (game.title.equalsIgnoreCase(title) && game.platform.equals(platform)) {
-                            duplicate = true;
-                            break;
+                    if (gameAlreadyExists(title, selectedPlatform)) {
+                        ui.error("That game already exists on " + selectedPlatform + ". Update its stock instead.");
+                        if (!editing) {
+                            step = 1;
                         }
-                    }
-                    if (duplicate) {
-                        ui.error("That game already exists on " + platform + ". Update its stock instead.");
-                        step = 1;
                         continue;
                     }
+                    platform = selectedPlatform;
                     step = 3;
+                    if (editing) {
+                        editing = false;
+                        step = 5;
+                    }
                 } else if (step == 3) {
-                    ui.printHeader("ADD GAME", "RENTAL PRICE");
-                    ui.showPriceInstructions();
+                    if (editing) {
+                        ui.showGameEditField(step, title, platform, price, copies);
+                    } else {
+                        ui.printHeader("ADD GAME", "RENTAL PRICE");
+                        ui.showPriceInstructions();
+                    }
                     String input = ui.readText(ui.prompt());
                     if (input.equalsIgnoreCase("M")) {
                         requestDashboardReturn();
@@ -1613,25 +1837,39 @@ public class GameRentalSystem {
                         ui.info("Add-game transaction cancelled. No changes were made.");
                         return;
                     }
-                    if (input.equals("0")) {
+                    if ((input.equalsIgnoreCase("B") || input.equals("0"))) {
                         step = 2;
+                        if (editing) {
+                            editing = false;
+                            step = 5;
+                        }
                         continue;
                     }
+                    double enteredPrice;
                     try {
-                        price = Double.parseDouble(input);
+                        enteredPrice = Double.parseDouble(input);
                     } catch (NumberFormatException e) {
                         ui.error("Enter a valid price.");
                         continue;
                     }
-                    if (!Double.isFinite(price) || price < MIN_RENTAL_PRICE || price > MAX_RENTAL_PRICE) {
+                    if (!Double.isFinite(enteredPrice) || enteredPrice < MIN_RENTAL_PRICE || enteredPrice > MAX_RENTAL_PRICE) {
                         ui.error("Rental price must be between " + ui.money(MIN_RENTAL_PRICE)
                             + " and " + ui.money(MAX_RENTAL_PRICE) + ".");
                         continue;
                     }
+                    price = enteredPrice;
                     step = 4;
+                    if (editing) {
+                        editing = false;
+                        step = 5;
+                    }
                 } else if (step == 4) {
-                    ui.printHeader("ADD GAME", "AVAILABLE COPIES");
-                    ui.showStockInstructions();
+                    if (editing) {
+                        ui.showGameEditField(step, title, platform, price, copies);
+                    } else {
+                        ui.printHeader("ADD GAME", "AVAILABLE COPIES");
+                        ui.showStockInstructions();
+                    }
                     String input = ui.readText(ui.prompt());
                     if (input.equalsIgnoreCase("M")) {
                         requestDashboardReturn();
@@ -1641,20 +1879,27 @@ public class GameRentalSystem {
                         ui.info("Add-game transaction cancelled. No changes were made.");
                         return;
                     }
-                    if (input.equals("0")) {
+                    if ((input.equalsIgnoreCase("B") || input.equals("0"))) {
                         step = 3;
+                        if (editing) {
+                            editing = false;
+                            step = 5;
+                        }
                         continue;
                     }
+                    int enteredCopies;
                     try {
-                        copies = Integer.parseInt(input);
+                        enteredCopies = Integer.parseInt(input);
                     } catch (NumberFormatException e) {
                         ui.error("Enter a whole number of copies.");
                         continue;
                     }
-                    if (copies < 1 || copies > MAX_GAME_STOCK) {
+                    if (enteredCopies < 1 || enteredCopies > MAX_GAME_STOCK) {
                         ui.error("Stock must be between 1 and " + MAX_GAME_STOCK + " copies.");
                         continue;
                     }
+                    copies = enteredCopies;
+                    editing = false;
                     step = 5;
                 } else {
                     ui.printHeader("ADMIN > MANAGE INVENTORY > ADD GAME", "CONFIRM NEW GAME");
@@ -1669,11 +1914,11 @@ public class GameRentalSystem {
                         ui.info("Add-game transaction cancelled. No changes were made.");
                         return;
                     }
-                    if (input.equals("2")) {
-                        step = 1;
+                    if (input.equalsIgnoreCase("E") || input.equals("2")) {
+                        step = 6;
                         continue;
                     }
-                    if (input.equals("0")) {
+                    if ((input.equalsIgnoreCase("B") || input.equals("0"))) {
                         step = 4;
                         continue;
                     }
@@ -1789,7 +2034,7 @@ public class GameRentalSystem {
                         ui.info("Stock update cancelled. No changes were made.");
                         return;
                     }
-                    if (input.equals("0")) {
+                    if ((input.equalsIgnoreCase("B") || input.equals("0"))) {
                         break;
                     }
                     if (!input.equals("1") && !input.equals("2")) {
@@ -1808,7 +2053,7 @@ public class GameRentalSystem {
                         ui.info("Stock update cancelled. No changes were made.");
                         return;
                     }
-                    if (qtyInput.equals("0")) {
+                    if ((qtyInput.equalsIgnoreCase("B") || qtyInput.equals("0"))) {
                         continue;
                     }
 

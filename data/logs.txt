@@ -77,3 +77,95 @@
 2026-10-11 13:35:33|EVENT|Login: gerbs (CLIENT)
 2026-10-11 13:36:42|EVENT|Login: admin (ADMIN)
 2026-10-11 13:36:56|ADMIN|Processed return: alex - Minecraft x1; days late 0; fee $0.00
+2026-10-11 13:51:17|EVENT|Failed login attempt for account: gerbis
+2026-10-11 13:51:33|EVENT|Failed login attempt for account: gerbis
+2026-10-11 13:52:14|EVENT|Failed login attempt for account: gerbs
+2026-10-11 13:52:30|EVENT|Failed login attempt for account: gerbs
+2026-10-11 13:52:34|EVENT|Failed login attempt for account: gerbs
+2026-10-11 13:53:08|EVENT|Failed login attempt for account: gerbs
+2026-10-11 13:53:14|EVENT|Login: gerbs (CLIENT)
+2026-10-11 13:53:24|EVENT|Failed login attempt for account: gerbs
+2026-10-11 13:53:29|EVENT|Login: gerbs (CLIENT)
+2026-10-11 14:01:38|EVENT|Queue request #018: gerbs - Spider-Man 2 x2 (1 day(s))
+2026-10-11 14:01:38|EVENT|Queue request #019: gerbs - God of War x1 (1 day(s))
+2026-10-11 14:02:07|EVENT|Login: admin (ADMIN)
+2026-10-11 14:03:11|EVENT|Failed login attempt for account: alex
+2026-10-11 14:03:14|EVENT|Failed login attempt for account: alex
+2026-10-11 14:03:20|EVENT|Login: alex (CLIENT)
+2026-10-11 14:05:49|EVENT|Queue request #020: alex - Spider-Man 2 x1 (3 day(s))
+2026-10-11 14:06:09|EVENT|Queue request #021: alex - Spider-Man 2 x1 (1 day(s))
+2026-10-11 14:07:44|EVENT|Queue request #022: alex - God of War x1 (7 day(s))
+2026-10-11 14:07:44|EVENT|Queue request #023: alex - Minecraft x1 (7 day(s))
+2026-10-11 14:07:56|EVENT|Login: admin (ADMIN)
+2026-10-11 14:11:02|EVENT|Login: admin (ADMIN)
+2026-10-11 14:11:39|ADMIN|Added stock: Spider-Man 2 (PS5) 2 -> 7
+2026-10-11 14:12:30|EVENT|Login: juan (CLIENT)
+2026-10-11 14:13:09|EVENT|Login: alex (CLIENT)
+2026-10-11 14:13:48|EVENT|Login: admin (ADMIN)
+2026-10-11 14:14:35|ADMIN|Processed return: alex - Forza Horizon 5 x1; days late 0; fee $0.00
+2026-10-11 14:15:31|ADMIN|Processed return: alex - Animal Crossing x1; days late 0; fee $0.00
+2026-10-11 14:15:31|ADMIN|Processed return: juan - Forza Horizon 5 x1; days late 0; fee $0.00
+2026-10-11 14:15:31|ADMIN|Processed return: alex - test x3; days late 0; fee $0.00
+2026-10-11 14:15:31|ADMIN|Processed return: alex - Halo Infinite x5; days late 0; fee $0.00
+2026-10-11 14:15:31|ADMIN|Processed return: juan - Mario Kart 8 x2; days late 0; fee $0.00
+2026-10-11 14:15:31|ADMIN|Processed return: alex - Zelda: Tears of the Kingdom x1; days late 0; fee $0.00
+2026-10-11 14:27:09|EVENT|Failed login attempt for account: juan
+2026-10-11 14:27:51|EVENT|Failed login attempt for account: juan
+2026-10-11 14:28:24|EVENT|Failed login attempt for account: juan
+2026-10-11 14:29:11|EVENT|Login: juan (CLIENT)
+2026-10-11 14:59:17|EVENT|Login: juan (CLIENT)
+2026-10-11 15:23:14|EVENT|Failed login attempt for account: admin
+2026-10-11 15:23:19|EVENT|Failed login attempt for account: admin
+2026-10-11 15:24:03|EVENT|Failed login attempt for account: admin
+2026-10-11 15:24:07|EVENT|Failed login attempt for account: admin
+2026-10-11 15:24:19|EVENT|Failed login attempt for account: SADASD
+2026-10-11 15:29:59|EVENT|Login: juan (CLIENT)
+2026-10-11 15:31:35|EVENT|Failed login attempt for account: admin
+2026-10-11 15:31:40|EVENT|Login: admin (ADMIN)
+2026-10-11 15:40:38|EVENT|Login: juan (CLIENT)
+2026-10-11 16:03:05|EVENT|Login: gerbs (CLIENT)
+2026-10-11 16:07:07|EVENT|Login: juan (CLIENT)
+2026-10-11 16:14:03|EVENT|Login: admin (ADMIN)
+2026-10-11 16:31:23|EVENT|Login: gerbs (CLIENT)
+2026-10-11 16:34:33|EVENT|Queue request #024: gerbs - test x1 (1 day(s))
+2026-10-11 16:34:33|EVENT|Queue request #025: gerbs - Forza Horizon 5 x2 (1 day(s))
+2026-10-11 16:34:33|EVENT|Queue request #026: gerbs - Spider-Man 2 x1 (1 day(s))
+2026-10-11 16:36:26|EVENT|Failed login attempt for account: admin
+2026-10-11 16:36:28|EVENT|Failed login attempt for account: admin
+2026-10-11 16:37:01|EVENT|Failed login attempt for account: admin
+2026-10-11 16:37:12|EVENT|Login: admin (ADMIN)
+2026-10-11 16:37:53|ADMIN|Processed checkout: alex - Spider-Man 2 x1
+2026-10-11 16:38:16|ADMIN|Processed checkout: juan - Spider-Man 2 x1
+2026-10-11 16:39:02|ADMIN|Processed checkout: alex - Spider-Man 2 x1
+2026-10-11 16:39:02|ADMIN|Processed checkout: alex - God of War x1
+2026-10-11 16:39:02|ADMIN|Processed checkout: alex - Minecraft x1
+2026-10-11 16:39:02|ADMIN|Processed checkout: juan - Spider-Man 2 x2
+2026-10-11 16:39:02|ADMIN|Processed checkout: juan - Spider-Man 2 x2
+2026-10-11 16:39:02|ADMIN|Processed checkout: gerbs - test x1
+2026-10-11 16:39:02|ADMIN|Processed checkout: gerbs - Forza Horizon 5 x2
+2026-10-11 16:39:36|ADMIN|Cancelled queue request #018: gerbs
+2026-10-11 16:42:29|ADMIN|Processed return: juan - Spider-Man 2 x1; days late 0; fee $0.00
+2026-10-11 16:42:29|ADMIN|Processed return: alex - Spider-Man 2 x1; days late 0; fee $0.00
+2026-10-11 16:42:29|ADMIN|Processed return: gerbs - test x1; days late 0; fee $0.00
+2026-10-11 16:42:29|ADMIN|Processed return: gerbs - Forza Horizon 5 x2; days late 0; fee $0.00
+2026-10-11 16:42:29|ADMIN|Processed return: alex - Spider-Man 2 x1; days late 0; fee $0.00
+2026-10-11 16:42:29|ADMIN|Processed return: juan - Spider-Man 2 x2; days late 0; fee $0.00
+2026-10-11 16:42:29|ADMIN|Processed return: alex - Minecraft x1; days late 0; fee $0.00
+2026-10-11 16:42:29|ADMIN|Processed return: alex - God of War x1; days late 0; fee $0.00
+2026-10-11 16:42:29|ADMIN|Processed return: alex - Minecraft x1; days late 0; fee $0.00
+2026-10-11 16:47:23|EVENT|Login: admin (ADMIN)
+2026-10-11 16:48:21|ADMIN|Processed checkout: gerbs - God of War x1
+2026-10-11 16:48:34|ADMIN|Processed checkout: gerbs - Spider-Man 2 x1
+2026-10-11 17:07:29|EVENT|Registered account: DLT
+2026-10-11 17:07:49|EVENT|Login: DLT (CLIENT)
+2026-10-11 17:08:05|EVENT|Queue request #027: DLT - Spider-Man 2 x1 (1 day(s))
+2026-10-11 17:08:05|EVENT|Queue request #028: DLT - Minecraft x1 (1 day(s))
+2026-10-11 17:08:27|EVENT|Upgraded to VIP: DLT
+2026-10-11 17:08:58|EVENT|Queue request #029: DLT - Minecraft x1 (1 day(s))
+2026-10-11 17:09:50|EVENT|Login: admin (ADMIN)
+2026-10-11 17:12:16|ADMIN|Added game: Butterbonia Game (PS5)
+2026-10-11 17:12:42|ADMIN|Added stock: Minecraft (PS5) 1 -> 6
+2026-10-11 17:12:58|ADMIN|Added stock: Minecraft (Xbox) 1 -> 6
+2026-10-11 17:13:11|ADMIN|Decreased stock: Minecraft (Xbox) 6 -> 5
+2026-10-11 17:29:06|EVENT|Login: admin (ADMIN)
+2026-10-11 17:34:10|ADMIN|Added game: MLBB (Nintendo)

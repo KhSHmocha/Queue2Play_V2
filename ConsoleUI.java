@@ -67,6 +67,43 @@ public class ConsoleUI {
         && System.getenv("NO_COLOR") == null;
     private String borderTone = PINK;
     private String textTone = "";
+    private String pendingNavigation = "";
+
+    // Color choices after alignment; escape codes do not affect column widths.
+    private String colorChoices(String text) {
+        Matcher choices = Pattern.compile("\\[(ENTER|[A-Z0-9]|[0-9]+–[0-9]+)\\][^\\[\\]│║]*").matcher(text);
+        StringBuilder result = new StringBuilder();
+        int start = 0;
+        while (choices.find()) {
+            result.append(text.substring(start, choices.start()));
+            String choice = choices.group();
+            String tone = BOLD_WHITE;
+            if (choice.contains("All Games")) {
+                tone = "\u001B[1;95m";
+            } else if (choice.contains("PS5")) {
+                tone = "\u001B[1;94m";
+            } else if (choice.contains("Xbox")) {
+                tone = "\u001B[1;92m";
+            } else if (choice.contains("Nintendo")) {
+                tone = "\u001B[1;91m";
+            } else if (choice.startsWith("[Y]") || choice.startsWith("[F]")) {
+                tone = "\u001B[1;92m";
+            } else if (choice.contains("Discard Cart") || choice.startsWith("[C]") || choice.startsWith("[L]") || choice.startsWith("[Q]")
+                    || choice.startsWith("[N]") && !choice.toLowerCase().contains("next")) {
+                tone = "\u001B[1;91m";
+            } else if (choice.startsWith("[B]") || choice.startsWith("[M]")) {
+                tone = "\u001B[1;38;5;218m";
+            } else if (choice.startsWith("[N]") || choice.startsWith("[P]")) {
+                tone = "\u001B[1;94m";
+            } else if (choice.startsWith("[E]")) {
+                tone = "\u001B[1;93m";
+            }
+            result.append(color(choice, tone));
+            start = choices.end();
+        }
+        result.append(text.substring(start));
+        return result.toString();
+    }
 
 
     // ---- ZendCash artwork ----
@@ -152,6 +189,9 @@ public class ConsoleUI {
     }
 
     private String styleContent(String text) {
+        if (text.matches(".*\\[(ENTER|[A-Z0-9]|[0-9]+–[0-9]+)\\].*")) {
+            return colorChoices(text);
+        }
         if (!textTone.isEmpty()) {
             return color(text, textTone);
         }
@@ -471,7 +511,7 @@ public class ConsoleUI {
         }
     }
 
-    // One input panel owns the label and guide for each prompt.
+    // Options use a padded box; the input label is a separate separator.
     void inputBar(String label) {
         inputBar(label, currentWidth);
     }
@@ -481,53 +521,84 @@ public class ConsoleUI {
     }
 
     void inputBar(String label, int width, String guide) {
+        showPendingMessage(width);
         currentWidth = width;
+        if (!checkoutDisplay) {
+            currentWidth = Math.min(width, terminalWidth);
+            width = currentWidth;
+        }
+        if (guide.startsWith("[")) {
+            for (String row : guide.split("\n")) {
+                ArrayList<String> options = new ArrayList<>();
+                Matcher matcher = Pattern.compile("\\[[^\\]]+\\][^\\[]*").matcher(row);
+                while (matcher.find()) {
+                    options.add(matcher.group().trim());
+                }
+                showNavigationOptions(width, options.toArray(new String[0]));
+            }
+            guide = "";
+        }
+        String choices = pendingNavigation;
+        pendingNavigation = "";
         String previousBorder = borderTone;
         String previousText = textTone;
         boolean previousLight = lightBox;
         borderTone = PINK;
         lightBox = true;
-        String text = " " + label.trim() + " ";
-        int remaining = Math.max(0, width - 2 - text.length());
+        textTone = SOFT_WHITE;
+        if (!choices.isEmpty()) {
+            flushBorder(false);
+            lastWasRow = false;
+            printLine(border(width, '-'));
+            printBoxCentered("", width);
+            for (String row : choices.split("\n", -1)) {
+                if (row.length() > width - 2) {
+                    printMessageRows(row, width);
+                } else {
+                    printBoxCentered(row, width);
+                }
+            }
+            printBoxCentered("", width);
+            printLine(border(width, '-'));
+            flushBorder(false);
+            printLine();
+        }
+        if (!guide.isEmpty()) {
+            for (String row : guide.split("\n")) {
+                printLine(fit(row, width));
+            }
+        }
+        String text = " " + fit(label.trim(), width - 2) + " ";
+        int remaining = Math.max(0, width - text.length());
         int left = remaining / 2;
         int right = remaining - left;
-        printLine("+" + "-".repeat(left) + text + "-".repeat(right) + "+");
-        textTone = SOFT_WHITE;
-        printBoxCentered("", width);
-        if (checkoutDisplay && label.equals("ENTER CHOICE")) {
-            printBoxCentered(guide, width);
-        } else {
-            printMessageRows(guide, width);
+        String separator = "-";
+        if (unicode) {
+            separator = "─";
         }
-        printBoxCentered("", width);
+        emitLine(color(separator.repeat(left) + text + separator.repeat(right), PINK));
         textTone = previousText;
-        printLine(border(width, '-'));
         borderTone = previousBorder;
         lightBox = previousLight;
     }
 
     private String inputGuide(String label) {
         switch (label) {
-            case "FULL NAME": return "Use 5-60 characters with at least two letters.\nOnly letters, spaces and dots are allowed.";
-            case "USERNAME": return "Use 3-20 letters, digits, dots, underscores or hyphens.\nInclude at least one letter.";
-            case "USERNAME OR EMAIL": return "Enter your registered username or email.";
-            case "EMAIL": return "Enter a valid email of at most 100 characters.\nExample: juancruz@gmail.com";
-            case "PASSWORD": return "Enter your password, then press ENTER.";
-            case "CONFIRM PASSWORD": return "Type the same password again.";
-            case "SEARCH GAME": return "Enter a game ID, title, or platform.";
+            case "FULL NAME": return "5-60 characters; letters, spaces and dots.";
+            case "USERNAME": return "3-20 characters; include a letter. Allowed: letters, digits, . _ -";
+            case "EMAIL": return "Max 100 characters. Example: juan@gmail.com";
+            case "SEARCH GAME": return "Game ID, title, or platform.";
             case "ENTER QUANTITY":
             case "QUANTITY TO ADD":
-            case "QUANTITY TO DECREASE": return "Enter a whole number of copies.";
-            case "RENTAL DURATION": return "Enter 1-" + GameRentalSystem.MAX_RENTAL_DAYS + " days.";
-            case "LINE NUMBER": return "Enter the cart line number to remove.";
-            case "QUEUE NUMBER TO CANCEL": return "Enter the queue number of the request you want to cancel.\nExample: type 3 or 003 for queue #003.";
+            case "QUANTITY TO DECREASE": return "Whole copies only.";
+            case "RENTAL DURATION": return "1-" + GameRentalSystem.MAX_RENTAL_DAYS + " days.";
+            case "QUEUE NUMBER TO CANCEL": return "Queue number, for example 003.";
             case "DAYS LATE": return "Enter days late; use 0 if returned on time.";
-            case "GAME TITLE": return "Enter the title of the game to add.";
-            case "RENTAL PRICE": return "Enter a price from " + money(GameRentalSystem.MIN_RENTAL_PRICE)
+            case "RENTAL PRICE": return money(GameRentalSystem.MIN_RENTAL_PRICE)
                 + " to " + money(GameRentalSystem.MAX_RENTAL_PRICE) + ".";
-            case "AVAILABLE COPIES": return "Enter 1-" + GameRentalSystem.MAX_GAME_STOCK + " copies.";
-            case "ENTER Y / N": return "Type Y for Yes or N for No, then press ENTER.";
-            default: return "Type an option number or navigation key,\nthen press ENTER to continue.";
+            case "AVAILABLE COPIES": return "1-" + GameRentalSystem.MAX_GAME_STOCK + " copies.";
+            case "ENTER Y / N": return "[Y] Yes      [N] No";
+            default: return "";
         }
     }
 
@@ -543,6 +614,7 @@ public class ConsoleUI {
 
     // Start each new screen at the top; redirected output needs no cursor controls.
     void clearScreen() {
+        pendingNavigation = "";
         pendingBorder = null;
         lastWasRow = false;
         outputAtLineStart = true;
@@ -596,6 +668,26 @@ public class ConsoleUI {
         flushBorder(false);
     }
 
+    // Keep a result visible. B returns one step; M leaves for the main destination.
+    boolean waitForResultNavigation(String previousDestination, String mainDestination) {
+        while (true) {
+            if (previousDestination.isEmpty()) {
+                showNavigationOptions(new String[] {"[M] " + mainDestination});
+            } else {
+                showNavigationOptions(new String[] {"[B] " + previousDestination, "[M] " + mainDestination});
+            }
+            inputBar("ENTER CHOICE");
+            String choice = readText(prompt());
+            if (choice.equalsIgnoreCase("M")) {
+                return false;
+            }
+            if (!previousDestination.isEmpty() && choice.equalsIgnoreCase("B")) {
+                return true;
+            }
+            error("Use the displayed navigation key.");
+        }
+    }
+
     void success(String message) {
         showPendingMessage(currentWidth);
         printMessageBox("SUCCESS: " + message, currentWidth);
@@ -612,6 +704,10 @@ public class ConsoleUI {
     }
 
     void info(String message) {
+        if (message.startsWith("[")) {
+            showNavigationOptions(new String[] {message});
+            return;
+        }
         printLine(message);
     }
 
@@ -640,14 +736,12 @@ public class ConsoleUI {
             tone = GREEN;
         }
         boolean previousLight = lightBox;
-        borderTone = tone;
+        borderTone = PINK;
         textTone = tone;
-        lightBox = true;
+        lightBox = false;
         printLine();
         printLine(border(width, '-'));
-        printBoxCentered("", width);
         printMessageRows(text, width);
-        printBoxCentered("", width);
         printLine(border(width, '-'));
         borderTone = previousBorder;
         textTone = previousText;
@@ -708,9 +802,7 @@ public class ConsoleUI {
         clearScreen();
         currentWidth = width;
         printLine(border(width, '='));
-        printBoxCentered("", width);
         printTitle(title, width);
-        printBoxCentered("", width);
         printLine(border(width, '='));
     }
 
@@ -722,13 +814,9 @@ public class ConsoleUI {
         clearScreen();
         currentWidth = width;
         printLine(border(width, '='));
-        printBoxCentered("", width);
         printTitle(path, width);
-        printBoxCentered("", width);
         printLine(border(width, '='));
-        printBoxCentered("", width);
         printTitle(title, width);
-        printBoxCentered("", width);
         printLine(border(width, '='));
     }
 
@@ -795,11 +883,27 @@ public class ConsoleUI {
     }
 
     private void showFeatureOptions(String[] options) {
-        printBoxCentered("", currentWidth);
+        showNavigationOptions(options);
+    }
+
+    // Center the whole menu list while keeping its numbered labels aligned.
+    private void showMenuOptions(String[] options) {
+        int longest = 0;
         for (String option : options) {
-            printBoxCentered(option, currentWidth);
+            longest = Math.max(longest, option.trim().length());
         }
-        printBoxCentered("", currentWidth);
+        String group = "";
+        for (String option : options) {
+            if (!group.isEmpty()) {
+                group += "\n";
+            }
+            String label = option.trim();
+            group += label + " ".repeat(longest - label.length());
+        }
+        if (!pendingNavigation.isEmpty()) {
+            pendingNavigation += "\n\n";
+        }
+        pendingNavigation += group;
     }
 
     String fit(String text, int maxLength) {
@@ -854,33 +958,68 @@ public class ConsoleUI {
         return String.format("#%03d", number);
     }
 
-    // Navigation appears in one centered footer row below the feature actions.
+    // Navigation is grouped below feature actions in the shared options box.
     void showNavigationOptions(String[] options) {
         showNavigationOptions(currentWidth, options);
     }
 
     void showNavigationOptions(int width, String[] options) {
         currentWidth = width;
-        printLine(border(width, '-'));
-        printBoxCentered("", width);
-        printBoxCentered(navigationRow(width, options), width);
-        printBoxCentered("", width);
-        printLine(border(width, '-'));
+        ArrayList<String> actions = new ArrayList<>();
+        ArrayList<String> cancellation = new ArrayList<>();
+        ArrayList<String> navigation = new ArrayList<>();
+        for (String option : options) {
+            if (option.startsWith("[C]") && (option.contains("Cancel") || option.contains("Main Menu"))) {
+                cancellation.add(option);
+            } else if (option.startsWith("[B]") || option.startsWith("[M]")) {
+                navigation.add(option);
+            } else {
+                actions.add(option);
+            }
+        }
+        showChoiceGroup(actions.toArray(new String[0]));
+        showChoiceGroup(cancellation.toArray(new String[0]));
+        showChoiceGroup(navigation.toArray(new String[0]));
+    }
+
+    // Center each finished row separately. Keep keys and labels together.
+    void showChoiceGroup(String[] options) {
+        if (options.length == 0) {
+            return;
+        }
+        int available = Math.min(currentWidth, terminalWidth) - 4;
+        String group = "";
+        String row = "";
+        int columns = 0;
+        for (String option : options) {
+            if (!row.isEmpty() && (columns == 3 || row.length() + 6 + option.length() > available)) {
+                if (!group.isEmpty()) {
+                    group += "\n";
+                }
+                group += row;
+                row = "";
+                columns = 0;
+            }
+            if (!row.isEmpty()) {
+                row += "      ";
+            }
+            row += option;
+            columns++;
+        }
+        if (!row.isEmpty()) {
+            if (!group.isEmpty()) {
+                group += "\n";
+            }
+            group += row;
+        }
+        if (!pendingNavigation.isEmpty()) {
+            pendingNavigation += "\n\n";
+        }
+        pendingNavigation += group;
     }
 
     private void showBoxNavigationOptions(String[] options) {
-        printLine(border(STANDARD_WIDTH, '-'));
-        printBoxCentered("", STANDARD_WIDTH);
-        printBoxCentered(navigationRow(STANDARD_WIDTH, options), STANDARD_WIDTH);
-        printBoxCentered("", STANDARD_WIDTH);
-    }
-
-    private String navigationRow(int width, String[] options) {
-        String row = String.join("   ", options);
-        if (row.length() <= width - 2) {
-            return row;
-        }
-        return String.join(" ", options);
+        showNavigationOptions(STANDARD_WIDTH, options);
     }
 
     void showSelectQuantityScreen(Game game, int inCart, int maxPerGame, int maximumToAdd) {
@@ -899,7 +1038,7 @@ public class ConsoleUI {
             "You may request up to: " + maximumToAdd
         });
         printBoxCentered("Cart quantity cannot exceed available stock.", STANDARD_WIDTH);
-        printBoxCentered(navigationRow(STANDARD_WIDTH, new String[] {"[0] Back", "[C] Cancel Transaction", "[M] Dashboard"}), STANDARD_WIDTH);
+        showNavigationOptions(new String[] {"[B] Select Game", "[M] Discard Cart / Dashboard"});
         printLine(border(STANDARD_WIDTH, '='));
         inputBar("ENTER QUANTITY");
     }
@@ -949,26 +1088,15 @@ public class ConsoleUI {
         printArtBlock(WELCOME_ART);
         printLogo();
         printLine("+==========================================================+");
-        printMenuButton("[1] Login");
-        printMenuButton("[2] Register");
-        printLine("|                                                          |");
-        showBoxNavigationOptions(new String[] {"[0] Exit"});
-        printLine("+==========================================================+");
+        showMenuOptions(new String[] {"[1] Login\n", "[2] Register"});
+        showBoxNavigationOptions(new String[] {"[Q] Exit"});
         inputBar("ENTER CHOICE");
     }
 
     private void showPlainMainMenu() {
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|                        QUEUE2PLAY                        |");
-        printLine("|                                                          |");
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|                        [1] Login                         |");
-        printLine("|                       [2] Register                       |");
-        printLine("|                                                          |");
-        showBoxNavigationOptions(new String[] {"[0] Exit"});
-        printLine("+==========================================================+");
+        printHeader("QUEUE2PLAY");
+        showMenuOptions(new String[] {"[1] Login", "[2] Register"});
+        showBoxNavigationOptions(new String[] {"[Q] Exit"});
         inputBar("ENTER CHOICE");
     }
 
@@ -1001,24 +1129,6 @@ public class ConsoleUI {
         printStyledRow(wall() + " ".repeat(inner) + wall());
     }
 
-    // ZendCash-style menu button: a small double-line box with the option inside.
-    private void printMenuButton(String label) {
-        int inner = STANDARD_WIDTH - 2;
-        int buttonWidth = 28;
-        String blank = " ".repeat(inner);
-        String top = "\u2554" + "\u2550".repeat(buttonWidth - 2) + "\u2557";
-        String bottom = "\u255A" + "\u2550".repeat(buttonWidth - 2) + "\u255D";
-        String side = color("\u2551", PINK);
-        String middle = side + color(center(label, buttonWidth - 2), BOLD_WHITE) + side;
-        int pad = (inner - buttonWidth) / 2;
-        String left = " ".repeat(pad);
-        String right = " ".repeat(inner - buttonWidth - pad);
-        printStyledRow(wall() + blank + wall());
-        printStyledRow(wall() + left + color(top, PINK) + right + wall());
-        printStyledRow(wall() + left + middle + right + wall());
-        printStyledRow(wall() + left + color(bottom, PINK) + right + wall());
-    }
-
     // Closing screen shown when the program exits.
     void showGoodbye() {
         clearScreen();
@@ -1038,27 +1148,16 @@ public class ConsoleUI {
     }
 
     void showLoginUsernameScreen() {
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|                          LOGIN                           |");
-        printLine("|                                                          |");
-        printLine("+==========================================================+");
-        showBoxNavigationOptions(new String[] {"[0] Main Menu"});
-        printLine("+==========================================================+");
+        printHeader("LOGIN");
+        printCenteredDetails(new String[] {"Username or email"});
+        showBoxNavigationOptions(new String[] {"[B] Main Menu"});
         inputBar("USERNAME OR EMAIL");
     }
 
     void showLoginPasswordScreen(String login) {
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|                          LOGIN                           |");
-        printLine("|                                                          |");
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printBoxCentered("Username/Email: " + fit(login, 40), STANDARD_WIDTH);
-        printLine("|                                                          |");
-        showBoxNavigationOptions(new String[] {"[B] Back to Username/Email", "[0] Main Menu"});
-        printLine("+==========================================================+");
+        printHeader("LOGIN");
+        printCenteredDetails(new String[] {"Username/Email: " + fit(login, 40)});
+        showBoxNavigationOptions(new String[] {"[B] Username/Email", "[C] Main Menu"});
         inputBar("PASSWORD");
     }
 
@@ -1076,14 +1175,14 @@ public class ConsoleUI {
             printCenteredDetails(new String[] {"Email: " + email});
         }
         if (step == 1 && !editing) {
-            showNavigationOptions(new String[] {"[0] Main Menu"});
+            showNavigationOptions(new String[] {"[B] Main Menu"});
         } else if (editing && step != 5) {
             showNavigationOptions(new String[] {"[B] Edit Information", "[C] Cancel Registration"});
         } else {
-            showNavigationOptions(new String[] {"[B] Previous Step", "[C] Cancel Registration"});
+            showNavigationOptions(new String[] {"[B] " + labels[step - 2], "[C] Cancel Registration"});
         }
         if (step == 4) {
-            inputBar(label, STANDARD_WIDTH, "Use 8-20 characters. Letters, digits and symbols are allowed.\nNo whitespace, control characters or |.");
+            inputBar(label, STANDARD_WIDTH, "8-20 characters; no spaces or |.");
         } else {
             inputBar(label);
         }
@@ -1092,7 +1191,7 @@ public class ConsoleUI {
     void showRegistrationEditMenu(String fullName, String username, String email) {
         printHeader("CREATE ACCOUNT", "EDIT INFORMATION");
         printCenteredDetails(new String[] {"Name: " + fullName, "Username: " + username, "Email: " + email});
-        showFeatureOptions(new String[] {"[1] Full Name", "[2] Username", "[3] Email", "[4] Password"});
+        showMenuOptions(new String[] {"[1] Full Name", "[2] Username", "[3] Email", "[4] Password"});
         showNavigationOptions(new String[] {"[B] Registration Summary"});
         inputBar("ENTER CHOICE");
     }
@@ -1118,9 +1217,37 @@ public class ConsoleUI {
         printMessageBox("WARNING: Three failed attempts. Wait 30 seconds before trying again.", STANDARD_WIDTH);
         flushBorder(false);
         System.out.flush();
-        for (int seconds = 0; seconds < 30; seconds++) {
+        for (int seconds = 30; seconds > 0; seconds--) {
+            showCooldownRemaining(seconds);
             waitLoginSecond();
         }
+        showCooldownRemaining(0);
+        emitLine("");
+        printLine("You can try again now.");
+    }
+
+    void showLoginAttempt(int attempt) {
+        String message = "Attempt " + attempt + "/3 — ";
+        if (attempt == 3) {
+            message += "Wait 30 seconds before trying again";
+        } else if (attempt == 2) {
+            message += "1 attempt remaining";
+        } else {
+            message += "2 attempts remaining";
+        }
+        // The next input panel displays this with the authentication error.
+        if (pendingMessage == null) {
+            pendingMessageType = "WARNING";
+            pendingMessage = message;
+        } else {
+            pendingMessage += "\n" + message;
+        }
+    }
+
+    void showCooldownRemaining(int seconds) {
+        currentWidth = Math.min(STANDARD_WIDTH, terminalWidth);
+        emit("\r" + color(center("Try again in " + seconds + " seconds", currentWidth), YELLOW));
+        System.out.flush();
     }
 
     // Unlike cosmetic animation pauses, this wait must also apply in fast mode.
@@ -1133,116 +1260,75 @@ public class ConsoleUI {
         }
     }
     void showPlatformMenu(String heading) {
-        clearScreen();
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printFormatted(String.format("|%58s|%n", center(heading, 58)));
-        printLine("|                                                          |");
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|                  [1] View All Games                      |");
-        printLine("|                  [2] PS5 Games                           |");
-        printLine("|                  [3] Xbox Games                          |");
-        printLine("|                  [4] Nintendo Games                      |");
-        printLine("|                                                          |");
-        showBoxNavigationOptions(new String[] {"[0] Back", "[M] Dashboard"});
-        printLine("+==========================================================+");
+        showPlatformMenu(heading, "Dashboard");
+    }
+
+    void showPlatformMenu(String heading, String destination) {
+        showPlatformMenu(heading, destination, false);
+    }
+
+    void showPlatformMenu(String heading, String destination, boolean hasCart) {
+        printHeader(heading);
+        showPlatformChoices();
+        if (hasCart) {
+            showChoiceGroup(new String[] {"[F] Finish Selection"});
+        }
+        if (!destination.equals("Dashboard")) {
+            String dashboard = "[M] Dashboard";
+            if (heading.contains("RENT GAMES")) {
+                dashboard = "[M] Discard Cart / Dashboard";
+            }
+            showBoxNavigationOptions(new String[] {"[B] " + destination, dashboard});
+        } else {
+            String back = "[B] Dashboard";
+            if (hasCart) {
+                back = "[B] Discard Cart / Dashboard";
+            }
+            showBoxNavigationOptions(new String[] {back});
+        }
         inputBar("ENTER CHOICE");
     }
 
+    private void showPlatformChoices() {
+        showMenuOptions(new String[] {"[1] Browse All Games", "[2] PS5 Games", "[3] Xbox Games", "[4] Nintendo Games"});
+    }
+
     void showBrowseMenu(boolean fromInventory) {
-        clearScreen();
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|                  BROWSE GAME INVENTORY                   |");
-        printLine("|                                                          |");
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|                  [1] View All Games                      |");
-        printLine("|                  [2] PS5 Games                           |");
-        printLine("|                  [3] Xbox Games                          |");
-        printLine("|                  [4] Nintendo Games                      |");
-        printLine("|                                                          |");
+        printHeader("BROWSE GAME INVENTORY");
+        showPlatformChoices();
         if (fromInventory) {
-            showBoxNavigationOptions(new String[] {"[0] Back to Inventory", "[M] Dashboard"});
+            showBoxNavigationOptions(new String[] {"[B] Inventory", "[M] Dashboard"});
         }
-        else showBoxNavigationOptions(new String[] {"[0] Back to Dashboard", "[M] Dashboard"});
-        printLine("+==========================================================+");
+        else showBoxNavigationOptions(new String[] {"[B] Dashboard"});
         inputBar("ENTER CHOICE");
     }
 
     void showClientMenu(User client) {
-        clearScreen();
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|                     CLIENT DASHBOARD                     |");
-        printLine("|                                                          |");
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printBoxCentered("Welcome, " + fit(client.username, 35)
-            + " [" + membershipColor(client.isVip()) + "]", STANDARD_WIDTH);
-        printLine("|                                                          |");
-        printLine("|             [1] Browse Game Inventory                    |");
-        printLine("|             [2] Rent Games / Join Checkout Queue         |");
-        printLine("|             [3] My Queue Requests                        |");
-        printLine("|             [4] View My Rental History                   |");
-        printLine("|             [5] Upgrade to VIP Membership                |");
-        printLine("|                                                          |");
-        showBoxNavigationOptions(new String[] {"[0] Logout"});
-        printLine("+==========================================================+");
+        printHeader("CLIENT DASHBOARD");
+        printCenteredDetails(new String[] {"Welcome: " + fit(client.username, 35), "Membership: " + membershipColor(client.isVip())});
+        showMenuOptions(new String[] {"[1] Browse Games", "[2] Rent Games", "[3] My Queue", "[4] Rental History", "[5] VIP Membership"});
+        showBoxNavigationOptions(new String[] {"[L] Logout"});
         inputBar("ENTER CHOICE");
     }
 
     void showAdminMenu() {
-        clearScreen();
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|                     ADMIN DASHBOARD                      |");
-        printLine("|                                                          |");
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|              [1] Checkout Management                     |");
-        printLine("|              [2] Process Game Returns & Late Fees        |");
-        printLine("|              [3] Manage Game Inventory                   |");
-        printLine("|              [4] Active Rentals                          |");
-        printLine("|              [5] View Admin Audit Log                    |");
-        printLine("|                                                          |");
-        showBoxNavigationOptions(new String[] {"[0] Logout"});
-        printLine("+==========================================================+");
+        printHeader("ADMIN DASHBOARD");
+        showMenuOptions(new String[] {"[1] Checkout", "[2] Process Returns", "[3] Inventory", "[4] Active Rentals", "[5] Audit Log"});
+        showBoxNavigationOptions(new String[] {"[L] Logout"});
         inputBar("ENTER CHOICE");
     }
 
     void showActiveRentalsMenu() {
-        clearScreen();
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|                     ACTIVE RENTALS                       |");
-        printLine("|                                                          |");
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|                 [1] View All Active Rentals              |");
-        printLine("|                 [2] View Overdue Rentals                 |");
-        printLine("|                                                          |");
-        showBoxNavigationOptions(new String[] {"[0] Back to Dashboard"});
-        printLine("+==========================================================+");
+        printHeader("ACTIVE RENTALS");
+        showMenuOptions(new String[] {"[1] All Active Rentals", "[2] Overdue Rentals"});
+        showBoxNavigationOptions(new String[] {"[B] Dashboard"});
         inputBar("ENTER CHOICE");
     }
 
     void showInventoryMenu() {
-        clearScreen();
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|                  MANAGE GAME INVENTORY                   |");
-        printLine("|                                                          |");
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|                  [1] Browse Inventory                    |");
-        printLine("|                  [2] Add Game                            |");
-        printLine("|                  [3] Update Game Stock                   |");
-        printLine("|                  [4] Delete Game                         |");
-        printLine("|                                                          |"); 
-        showBoxNavigationOptions(new String[] {"[0] Back to Dashboard"});
-        printLine("+==========================================================+");
+        printHeader("MANAGE GAME INVENTORY");
+        showMenuOptions(new String[] {"[1] Browse Inventory", "[2] Add Game", "[3] Update Stock", "[4] Delete Game"});
+        showBoxNavigationOptions(new String[] {"[B] Dashboard"});
         inputBar("ENTER CHOICE");
     }
 
@@ -1285,7 +1371,6 @@ public class ConsoleUI {
 
     void showOrderSummary(User client, LinkedHashMap<Game, Integer> cart, int days, RentalService rentalService) {
         printHeader("ORDER SUMMARY", ConsoleUI.ORDER_TABLE_WIDTH);
-        printBoxCentered("Game requests are processed separately. Stock is checked at checkout.", ORDER_TABLE_WIDTH);
         if (cart.isEmpty()) {
             showEmptyState("Your cart is empty. Add a game before submitting.");
             return;
@@ -1294,25 +1379,22 @@ public class ConsoleUI {
         double total = 0;
         int totalQuantity = 0;
         int line = 1;
-        printLine(border(ORDER_TABLE_WIDTH, '-'));
-        printBoxCentered("", ORDER_TABLE_WIDTH);
-        printBoxCentered(String.format("%-4s | %-26s | %-10s | %5s | %10s | %10s",
-            "NO.", "GAME TITLE", "PLATFORM", "QTY", "UNIT PRICE", "SUBTOTAL"), ORDER_TABLE_WIDTH);
-        printBoxCentered("", ORDER_TABLE_WIDTH);
-        printLine(border(ORDER_TABLE_WIDTH, '-'));
-        printBoxCentered("", ORDER_TABLE_WIDTH);
+        printLine(tableLine(ORDER_TABLE_WIDTH));
+        printLine(String.format("%-4s | %-26s | %-10s | %5s | %10s | %10s",
+            "NO.", "GAME TITLE", "PLATFORM", "QTY", "UNIT PRICE", "SUBTOTAL"));
+        printLine(tableLine(ORDER_TABLE_WIDTH));
         for (Game game : cart.keySet()) {
             int quantity = cart.get(game);
             double unitPrice = rentalService.calculateRentalCost(client, game, days);
             double subtotal = rentalService.calculateRentalCost(client, game, days, quantity);
             total += subtotal;
             totalQuantity += quantity;
-            printBoxCentered(String.format("%-4d | %-26s | %-10s | %5d | %10s | %10s",
+            printLine(String.format("%-4d | %-26s | %-10s | %5d | %10s | %10s",
                 line, fit(game.title, 26),
-                fit(platformColor(game.platform), 10), quantity, money(unitPrice), money(subtotal)), ORDER_TABLE_WIDTH);
+                fit(platformColor(game.platform), 10), quantity, money(unitPrice), money(subtotal)));
             line++;
         }
-        printBoxCentered("", ORDER_TABLE_WIDTH);
+        printLine(tableLine(ORDER_TABLE_WIDTH));
         String membership = membershipColor(client.isVip());
         if (client.isVip()) {
             membership += " - 10% discount applied";
@@ -1347,29 +1429,114 @@ public class ConsoleUI {
     }
 
     void showGameNavigation() {
-        printLine("[S] Search  [X] Clear search  [O] Change sort");
-        printLine("[N] Next page  [P] Previous page");
-        showNavigationOptions(GAME_TABLE_WIDTH, new String[] {"[0] Back", "[M] Dashboard"});
+        showGameNavigation(0, 1, "");
+    }
+
+    boolean confirmDiscardCart() {
+        while (true) {
+            int width = currentWidth;
+            printLine(border(width, '-'));
+            printWrappedBoxText("Discard your cart and return to Dashboard?", width);
+            printLine(border(width, '-'));
+            inputBar("CONFIRM", width, "[Y] Discard Cart      [N] Keep Cart");
+            String answer = readText(prompt());
+            if (answer.equalsIgnoreCase("Y") || answer.equalsIgnoreCase("YES")) {
+                return true;
+            }
+            if (answer.equalsIgnoreCase("N") || answer.equalsIgnoreCase("NO")) {
+                return false;
+            }
+            error("Use Y or N.");
+        }
+    }
+
+    void showGameNavigation(int page, int pages, String keyword) {
+        showGameNavigation(page, pages, keyword, false, false, 0);
+    }
+
+    void showGameNavigation(int page, int pages, String keyword, boolean selectable, boolean hasCart, int shown) {
+        currentWidth = GAME_TABLE_WIDTH;
+        ArrayList<String> actions = new ArrayList<>();
+        if (selectable && shown > 0) {
+            String numbers = "1";
+            if (shown > 1) {
+                numbers += "–" + shown;
+            }
+            actions.add("[" + numbers + "] Select Game");
+        }
+        if (hasCart) {
+            actions.add("[F] Finish Selection");
+        }
+        showChoiceGroup(actions.toArray(new String[0]));
+        ArrayList<String> tools = new ArrayList<>();
+        tools.add("[S] Search");
+        tools.add("[T] Sort");
+        if (!keyword.isEmpty()) {
+            tools.add("[X] Clear Search");
+        }
+        showChoiceGroup(tools.toArray(new String[0]));
+        ArrayList<String> pagesAvailable = new ArrayList<>();
+        if (page < pages - 1) {
+            pagesAvailable.add("[N] Next Page");
+        }
+        if (page > 0) {
+            pagesAvailable.add("[P] Previous Page");
+        }
+        if (!pagesAvailable.isEmpty()) {
+            String saved = pendingNavigation;
+            pendingNavigation = "";
+            showChoiceGroup(pagesAvailable.toArray(new String[0]));
+            pendingNavigation = saved + "\n" + pendingNavigation;
+        }
+        String dashboard = "[M] Dashboard";
+        if (selectable && hasCart) {
+            dashboard = "[M] Discard Cart / Dashboard";
+        }
+        showChoiceGroup(new String[] {"[B] Select Platform", dashboard});
     }
 
     void showCatalogState(String keyword, int sortOption, int page, int totalPages) {
+        showCatalogState(keyword, sortOption, page, totalPages, null);
+    }
+
+    void showCatalogState(String keyword, int sortOption, int page, int totalPages, LinkedHashMap<Game, Integer> cart) {
         String[] sortNames = {"Default order", "Title A-Z", "Title Z-A", "Price low-high", "Price high-low"};
         String searchLabel = "None";
         if (!keyword.isEmpty()) {
             searchLabel = keyword;
         }
-        printLine("Search: " + searchLabel);
-        printLine("Sort: " + sortNames[sortOption] + " | Page " + page + " of " + totalPages);
+        int width = Math.min(GAME_TABLE_WIDTH, terminalWidth);
+        currentWidth = width;
+        printLeftRight("Search: " + searchLabel, "Page: " + page + "/" + totalPages, width);
+        String cartText = "";
+        if (cart != null) {
+            int copies = 0;
+            for (int quantity : cart.values()) {
+                copies += quantity;
+            }
+            cartText = "Cart: " + cart.size() + " games · " + copies + " copies";
+        }
+        printLeftRight("Sort: " + sortNames[sortOption], cartText, width);
+    }
+
+    private void printLeftRight(String left, String right, int width) {
+        int leftWidth = Math.max(0, width - right.length() - 2);
+        left = fit(left, leftWidth);
+        printLine(left + " ".repeat(width - left.length() - right.length()) + right);
     }
 
     void showRentalDurationOptions() {
+        showRentalDurationOptions("Select Game");
+    }
+
+    void showRentalDurationOptions(String previousScreen) {
         showFeatureOptions(new String[] {
             "[1] 1 Day",
             "[2] 3 Days",
             "[3] 7 Days",
             "[4] Custom Duration (1-" + GameRentalSystem.MAX_RENTAL_DAYS + " days)"
         });
-        showNavigationOptions(new String[] {"[0] Back", "[C] Cancel Transaction", "[M] Dashboard"});
+        showNavigationOptions(new String[] {"[B] " + previousScreen, "[M] Discard Cart / Dashboard"});
     }
 
     void showEditOrderTableHeader() {
@@ -1387,28 +1554,32 @@ public class ConsoleUI {
 
     void showEditOrderOptions(int days) {
         printCenteredDetails(new String[] {"Rental Duration: " + rentalDurationText(days)});
-        showFeatureOptions(new String[] {"[1] Add a game", "[2] Remove a game from the cart", "[3] Change rental duration"});
-        showNavigationOptions(EDIT_ORDER_TABLE_WIDTH, new String[] {"[0] Back", "[C] Cancel Transaction", "[M] Dashboard"});
+        showFeatureOptions(new String[] {"[1] Add Game", "[2] Remove Game", "[3] Change Duration"});
+        showNavigationOptions(EDIT_ORDER_TABLE_WIDTH, new String[] {"[B] Order Summary", "[M] Discard Cart / Dashboard"});
     }
 
     void showOrderConfirmationOptions() {
-        showFeatureOptions(new String[] {"[1] Confirm Order", "[2] Edit Order"});
-        showNavigationOptions(ORDER_TABLE_WIDTH, new String[] {"[0] Back", "[C] Cancel Transaction", "[M] Dashboard"});
+        showFeatureOptions(new String[] {"[1] Confirm Order", "[E] Edit Order"});
+        showNavigationOptions(ORDER_TABLE_WIDTH, new String[] {"[B] Rental Duration", "[M] Discard Cart / Dashboard"});
     }
 
     void showSubmittedQueueHeader() {
         printLine();
         printLine(tableLine(ConsoleUI.QUEUE_TABLE_WIDTH));
         printFormatted(String.format("%-8s | %-30s | %-10s | %5s | %8s%n",
-            "QUEUE #", "GAME TITLE", "PLATFORM", "QTY", "LIST POS"));
+            "QUEUE #", "GAME TITLE", "PLATFORM", "QTY", "POSITION"));
         printLine(tableLine(ConsoleUI.QUEUE_TABLE_WIDTH));
     }
 
     void showQueueRequestRow(int position, RentalRequest request) {
-        printFormatted(String.format("%-8s | %-30s | %-10s | %5d | %8d%n",
+        String positionText = "WAITING";
+        if (position > 0) {
+            positionText = String.valueOf(position);
+        }
+        printFormatted(String.format("%-8s | %-30s | %-10s | %5d | %8s%n",
             queueLabel(request.queueNumber),
             fit(request.game.title, 30),
-            platformColor(request.game.platform), request.quantity, position));
+            platformColor(request.game.platform), request.quantity, positionText));
     }
 
     void showQueueRequestHeader() {
@@ -1439,12 +1610,8 @@ public class ConsoleUI {
         }
     }
 
-    void showBackOptions() {
-        showNavigationOptions(new String[] {"[0] Back", "[M] Dashboard"});
-    }
-
     void showBackToDashboard() {
-        showNavigationOptions(new String[] {"[0] Back to Dashboard"});
+        showNavigationOptions(new String[] {"[B] Dashboard"});
     }
 
     // Format plain text to 81 columns before the shared renderer applies colors.
@@ -1506,13 +1673,10 @@ public class ConsoleUI {
         clearScreen();
         checkoutDisplay = true;
         currentWidth = CHECKOUT_QUEUE_TABLE_WIDTH;
-        ArrayList<RentalRequest> requests = queue.getRequests();
-        int ready = 0;
-        for (RentalRequest request : requests) {
-            if (checkoutReady(request)) {
-                ready++;
-            }
-        }
+        ArrayList<RentalRequest> planned = queue.previewReadyRequests();
+        ArrayList<RentalRequest> requests = queue.getDisplayRequests(planned);
+        int ready = planned.size();
+        java.util.LinkedHashMap<Game, Integer> stocks = new java.util.LinkedHashMap<>();
         printLine(border(currentWidth, '='));
         checkoutRow("ADMIN > CHECKOUT           QUEUE " + requests.size() + "  READY " + ready
             + "  WAITING " + (requests.size() - ready));
@@ -1520,8 +1684,8 @@ public class ConsoleUI {
         if (requests.isEmpty()) {
             showEmptyState("The checkout queue is empty.");
         } else {
-            checkoutRow(String.format("%-7s%-5s%-10s%-18s%3s  %4s  %-7s%s",
-                "#", "PRI", "CUSTOMER", "GAME", "QTY", "DAYS", "STOCK", "STATUS"));
+            checkoutRow(String.format("%-5s%-7s%-5s%-10s%-17s%3s %4s %-7s%s",
+                "POS", "#", "PRI", "CUSTOMER", "GAME", "QTY", "DAYS", "STOCK", "STATUS"));
             printLine(border(currentWidth, '-'));
             for (RentalRequest request : requests) {
                 String priority = "REG";
@@ -1536,10 +1700,28 @@ public class ConsoleUI {
                 if (request.game != null) {
                     title = request.game.title;
                 }
-                checkoutRow(String.format("%-7s%-5s%-10s%-18s%3d  %4d  %-7s%s",
-                    queueLabel(request.queueNumber), priority, fit(customer, 9),
-                    fit(title, 17), request.quantity, request.rentalDays,
-                    checkoutStock(request), checkoutStatus(request)));
+                int position = planned.indexOf(request) + 1;
+                String positionText = "-";
+                String status = "WAITING";
+                String stockText = "-";
+                if (request.game != null) {
+                    if (!stocks.containsKey(request.game)) {
+                        stocks.put(request.game, request.game.availableCopies);
+                    }
+                    int stock = stocks.get(request.game);
+                    stockText = String.valueOf(stock);
+                    if (position > 0) {
+                        stockText = stock + "→" + (stock - request.quantity);
+                        stocks.put(request.game, stock - request.quantity);
+                    }
+                }
+                if (position > 0) {
+                    positionText = String.valueOf(position);
+                    status = "READY";
+                }
+                checkoutRow(String.format("%-5s%-7s%-5s%-10s%-17s%3d %4d %-7s%s",
+                    positionText, queueLabel(request.queueNumber), priority, fit(customer, 9),
+                    fit(title, 16), request.quantity, request.rentalDays, stockText, status));
             }
         }
         printLine(border(currentWidth, '-'));
@@ -1618,8 +1800,12 @@ public class ConsoleUI {
         showPendingMessage(CHECKOUT_QUEUE_TABLE_WIDTH);
         flushBorder(false);
         lastWasRow = false;
-        inputBar("ENTER CHOICE", CHECKOUT_QUEUE_TABLE_WIDTH,
-            "[ENTER] Approve  [A] All  [X] Cancel #  [Q] Queue  [R] Receipt  [0] Back");
+        currentWidth = CHECKOUT_QUEUE_TABLE_WIDTH;
+        showChoiceGroup(new String[] {"[ENTER] Approve", "[A] All"});
+        showChoiceGroup(new String[] {"[V] Queue", "[R] Receipt"});
+        showChoiceGroup(new String[] {"[C] Cancel #"});
+        showChoiceGroup(new String[] {"[B] Dashboard"});
+        inputBar("ENTER CHOICE", CHECKOUT_QUEUE_TABLE_WIDTH, "");
         flushBorder(false);
         lastWasRow = false;
     }
@@ -1641,7 +1827,7 @@ public class ConsoleUI {
         lastWasRow = false;
         String separator = "─".repeat(CHECKOUT_QUEUE_TABLE_WIDTH);
         emitLine(color(separator, PINK));
-        emitLine(center(text, CHECKOUT_QUEUE_TABLE_WIDTH));
+        emitLine(colorChoices(center(text, CHECKOUT_QUEUE_TABLE_WIDTH)));
         emitLine(color(separator, PINK));
     }
 
@@ -1760,8 +1946,8 @@ public class ConsoleUI {
 
     void showQueueCancellationOptions() {
         printLine(border(currentWidth, '-'));
-        showFeatureOptions(new String[] {"[1] Cancel a Request"});
-        showNavigationOptions(currentWidth, new String[] {"[0] Back", "[M] Dashboard"});
+        showFeatureOptions(new String[] {"[C] Cancel a Request"});
+        showNavigationOptions(currentWidth, new String[] {"[B] Dashboard"});
         inputBar("ENTER CHOICE", currentWidth);
     }
 
@@ -1789,6 +1975,91 @@ public class ConsoleUI {
         });
     }
 
+    void showReturnSelectionList(ArrayList<Rental> rentals, int start, int end, int page, int pages, String keyword) {
+        printHeader("ADMIN > RETURNS", "EARLIEST DUE DATE FIRST", RETURN_TABLE_WIDTH);
+        printLine("Page " + (page + 1) + " of " + pages);
+        if (!keyword.isEmpty()) {
+            printLine("Search: " + fit(keyword, RETURN_TABLE_WIDTH - 8));
+        }
+        if (rentals.isEmpty()) {
+            showEmptyState("No matching active rentals.");
+        } else {
+            showReturnTableHeader(rentals.size(), start, end);
+            for (int i = start; i < end; i++) {
+                showReturnRow(i - start + 1, rentals.get(i));
+            }
+            printLine(tableLine(RETURN_TABLE_WIDTH));
+        }
+        showNavigationOptions(new String[] {"[S] Search"});
+        if (!keyword.isEmpty()) {
+            showNavigationOptions(new String[] {"[X] Clear Search"});
+        }
+        if (page < pages - 1) {
+            showNavigationOptions(new String[] {"[N] Next Page"});
+        }
+        if (page > 0) {
+            showNavigationOptions(new String[] {"[P] Previous Page"});
+        }
+        showNavigationOptions(new String[] {"[B] Dashboard"});
+        inputBar("SELECT RETURNS", RETURN_TABLE_WIDTH,
+                "Rows: 1,3,5 · Current page · Full quantities");
+    }
+
+    void showReturnSearchPrompt() {
+        showNavigationOptions(new String[] {"[B] Return List", "[M] Dashboard"});
+        inputBar("SEARCH RETURNS", RETURN_TABLE_WIDTH,
+                "Customer, game ID, or title; blank shows all.");
+    }
+
+    void showSelectedReturnSummary(ArrayList<Rental> selected, LocalDateTime returnedAt, RentalService service) {
+        printHeader("ADMIN > RETURNS", "CONFIRM SELECTED RETURNS", RETURN_TABLE_WIDTH);
+        printLine("Selected rentals: " + selected.size() + " | Earliest due date first");
+        printLine(tableLine(RETURN_TABLE_WIDTH));
+        printFormatted(String.format("%-8s | %-12s | %-24s | %3s | %-17s | %4s | %9s%n",
+                "RENTAL #", "CUSTOMER", "GAME", "QTY", "DUE DATE", "LATE", "LATE FEE"));
+        printLine(tableLine(RETURN_TABLE_WIDTH));
+        double total = 0;
+        for (Rental rental : selected) {
+            int daysLate = RentalService.daysOverdue(rental.dueDate, returnedAt);
+            double fee = service.calculateLateFee(rental, daysLate);
+            total += fee;
+            printFormatted(String.format("%-8s | %-12s | %-24s | %3d | %-17s | %4d | %9s%n",
+                    rentalLabel(rental.rentalNumber), fit(rental.client.username, 12), fit(rental.game.title, 24),
+                    rental.quantity, rental.dueDate.format(DateTimeFormatter.ofPattern("MMM dd yyyy HH:mm", java.util.Locale.ENGLISH)),
+                    daysLate, money(fee)));
+        }
+        printLine(tableLine(RETURN_TABLE_WIDTH));
+        printLine("Total late fees: " + money(total));
+        printLine("Fee is $1 per copy for each started day overdue. Payment is collected separately.");
+    }
+
+    boolean confirmSelectedReturns(ArrayList<Rental> selected, LocalDateTime returnedAt, RentalService service) {
+        showSelectedReturnSummary(selected, returnedAt, service);
+        while (true) {
+            inputBar("CONFIRM RETURNS", RETURN_TABLE_WIDTH, "[Y] Confirm Returns   [N] Back to List");
+            String answer = readText(prompt(RETURN_TABLE_WIDTH)).trim();
+            if (answer.equalsIgnoreCase("Y") || answer.equalsIgnoreCase("YES")) {
+                return true;
+            }
+            if (answer.equalsIgnoreCase("N") || answer.equalsIgnoreCase("NO")) {
+                return false;
+            }
+            error("Use Y to confirm or N to return to the list.");
+        }
+    }
+
+    void showSelectedReturnResults(ArrayList<Rental> selected) {
+        printHeader("ADMIN > RETURNS", "RETURNS PROCESSED", RETURN_TABLE_WIDTH);
+        success(selected.size() + " rental return(s) and their late fees saved.");
+        for (Rental rental : selected) {
+            printCenteredDetails(new String[] {"Rental: " + rentalLabel(rental.rentalNumber),
+                    "Customer: " + rental.client.username, "Game: " + rental.game.title,
+                    "Quantity returned: " + rental.quantity, "Days overdue: " + rental.daysLate,
+                    "Late fee: " + money(rental.lateFee), "Current stock: " + rental.game.availableCopies});
+        }
+        finishScreen();
+    }
+
     void showReturnTableHeader(int total, int start, int end) {
         printLine("Showing " + (start + 1) + "-" + end + " of " + total + " active rentals\n");
         printLine(tableLine(ConsoleUI.RETURN_TABLE_WIDTH));
@@ -1803,43 +2074,6 @@ public class ConsoleUI {
             fit(rental.client.username, 14),
             fit(rental.game.title, 30),
             rental.quantity, rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT)));
-    }
-
-    void showReturnDetails(Rental found) {
-        printCenteredDetails(new String[] {
-            "Rental   : " + rentalLabel(found.rentalNumber),
-            "Customer : " + found.client.username,
-            "Game     : " + found.game.title,
-            "Platform : " + platformColor(found.game.platform),
-            "Quantity : " + found.quantity,
-            "Due On   : " + found.dueDate.format(GameRentalSystem.DATE_FORMAT)
-        });
-        showNavigationOptions(new String[] {"[C] Cancel Transaction", "[M] Dashboard"});
-    }
-
-    void showReturnConfirmation(Rental found, int daysLate, double lateFee) {
-        printCenteredDetails(new String[] {
-            "Rental            : " + rentalLabel(found.rentalNumber),
-            "Customer          : " + found.client.username,
-            "Game              : " + found.game.title,
-            "Quantity Returned : " + found.quantity,
-            "Days Overdue      : " + daysLate,
-            "Late Fee          : " + money(lateFee)
-        });
-        printBoxCentered("Fee is $1 per copy for each started day overdue.", currentWidth);
-        showFeatureOptions(new String[] {"[1] Confirm Return"});
-        showNavigationOptions(new String[] {"[0] Back", "[C] Cancel Transaction", "[M] Dashboard"});
-    }
-
-    void showReturnResult(Rental found, int daysLate, double lateFee) {
-        printCenteredDetails(new String[] {
-            "Customer          : " + found.client.username,
-            "Game              : " + found.game.title,
-            "Quantity Returned : " + found.quantity,
-            "Days Overdue      : " + daysLate,
-            "Late Fee          : " + money(lateFee),
-            "Current Stock     : " + found.game.availableCopies
-        });
     }
 
     void showActiveRentalHeader(int total, int start, int end) {
@@ -1899,7 +2133,7 @@ public class ConsoleUI {
     }
 
     void showAddGameInstructions() {
-        showNavigationOptions(new String[] {"[0] Back", "[C] Cancel Transaction", "[M] Dashboard"});
+        showNavigationOptions(new String[] {"[B] Inventory", "[C] Cancel Transaction", "[M] Dashboard"});
     }
 
     void showPlatformOptions() {
@@ -1908,28 +2142,51 @@ public class ConsoleUI {
             "[2] " + platformColor("Xbox"),
             "[3] " + platformColor("Nintendo")
         });
-        showNavigationOptions(new String[] {"[0] Back", "[C] Cancel Transaction", "[M] Dashboard"});
+        showNavigationOptions(new String[] {"[B] Game Title", "[C] Cancel Transaction", "[M] Dashboard"});
     }
 
     void showPriceInstructions() {
-        showNavigationOptions(new String[] {"[0] Back", "[C] Cancel Transaction", "[M] Dashboard"});
+        showNavigationOptions(new String[] {"[B] Select Platform", "[C] Cancel Transaction", "[M] Dashboard"});
         inputBar("RENTAL PRICE");
     }
 
     void showStockInstructions() {
-        showNavigationOptions(new String[] {"[0] Back", "[C] Cancel Transaction", "[M] Dashboard"});
+        showNavigationOptions(new String[] {"[B] Rental Price", "[C] Cancel Transaction", "[M] Dashboard"});
         inputBar("AVAILABLE COPIES");
     }
 
     void showNewGameConfirmation(String title, String platform, double price, int copies) {
+        showNewGameDetails(title, platform, price, copies);
+        showFeatureOptions(new String[] {"[1] Confirm Add", "[E] Edit Information"});
+        showNavigationOptions(new String[] {"[B] Available Copies", "[C] Cancel Transaction", "[M] Dashboard"});
+    }
+
+    private void showNewGameDetails(String title, String platform, double price, int copies) {
         printCenteredDetails(new String[] {
             "Title    : " + title,
             "Platform : " + platformColor(platform),
             "Price    : " + money(price),
             "Stock    : " + copies
         });
-        showFeatureOptions(new String[] {"[1] Confirm Add", "[2] Edit Information"});
-        showNavigationOptions(new String[] {"[0] Back", "[C] Cancel Transaction", "[M] Dashboard"});
+    }
+
+    void showGameEditMenu(String title, String platform, double price, int copies) {
+        printHeader("ADMIN > ADD GAME", "EDIT INFORMATION");
+        showNewGameDetails(title, platform, price, copies);
+        showMenuOptions(new String[] {"[1] Game Title", "[2] Platform", "[3] Rental Price", "[4] Available Copies"});
+        showNavigationOptions(new String[] {"[B] Game Summary"});
+        inputBar("ENTER CHOICE");
+    }
+
+    void showGameEditField(int step, String title, String platform, double price, int copies) {
+        String[] labels = {"GAME TITLE", "PLATFORM", "RENTAL PRICE", "AVAILABLE COPIES"};
+        printHeader("ADMIN > ADD GAME", "EDIT " + labels[step - 1]);
+        showNewGameDetails(title, platform, price, copies);
+        if (step == 2) {
+            showFeatureOptions(new String[] {"[1] PS5", "[2] Xbox", "[3] Nintendo"});
+        }
+        showNavigationOptions(new String[] {"[C] Cancel Transaction", "[B] Game Summary", "[M] Dashboard"});
+        inputBar(labels[step - 1]);
     }
 
     void showGameAdded(Game game) {
@@ -1960,11 +2217,11 @@ public class ConsoleUI {
             "Stock Limit   : 0-" + GameRentalSystem.MAX_GAME_STOCK
         });
         showFeatureOptions(new String[] {"[1] Add Stock", "[2] Decrease Stock"});
-        showNavigationOptions(new String[] {"[0] Back", "[C] Cancel Transaction", "[M] Dashboard"});
+        showNavigationOptions(new String[] {"[B] Select Game", "[C] Cancel Transaction", "[M] Dashboard"});
     }
 
     void showStockQuantityPrompt(boolean adding) {
-        showNavigationOptions(new String[] {"[0] Back", "[C] Cancel Transaction", "[M] Dashboard"});
+        showNavigationOptions(new String[] {"[B] Update Stock", "[C] Cancel Transaction", "[M] Dashboard"});
         if (adding) {
             inputBar("QUANTITY TO ADD");
         } else {

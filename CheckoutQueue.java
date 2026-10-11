@@ -1,4 +1,5 @@
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 
 /** A doubly linked checkout queue. VIP requests precede regular requests. */
 public class CheckoutQueue {
@@ -193,14 +194,18 @@ public class CheckoutQueue {
     }
 
     int getPosition(RentalRequest request) {
-        int position = 1;
-        for (Node current = front; current != null; current = current.next) {
-            if (current.request == request) {
-                return position;
+        return previewReadyRequests().indexOf(request) + 1;
+    }
+
+    // Ready requests come first; waiting requests keep their existing relative order.
+    ArrayList<RentalRequest> getDisplayRequests(ArrayList<RentalRequest> ready) {
+        ArrayList<RentalRequest> displayed = new ArrayList<>(ready);
+        for (RentalRequest request : getRequests()) {
+            if (!ready.contains(request)) {
+                displayed.add(request);
             }
-            position++;
         }
-        return -1;
+        return displayed;
     }
 
     RentalRequest findNextEligibleRequest() {
@@ -229,4 +234,37 @@ public class CheckoutQueue {
         }
         return requests;
     }
+    // Use the real queue policy on copied games; previews never reserve stock.
+    ArrayList<RentalRequest> previewReadyRequests() {
+        CheckoutQueue previewQueue = new CheckoutQueue();
+        previewQueue.vipStreak = vipStreak;
+        LinkedHashMap<Game, Game> stockCopies = new LinkedHashMap<>();
+        for (RentalRequest request : getRequests()) {
+            if (!CheckoutQueue.validRequest(request)) {
+                continue;
+            }
+            Game copiedGame = stockCopies.get(request.game);
+            if (copiedGame == null && request.game != null) {
+                copiedGame = new Game(request.game.gameId, request.game.title, request.game.platform,
+                    request.game.price, request.game.availableCopies);
+                stockCopies.put(request.game, copiedGame);
+            }
+            RentalRequest copiedRequest = new RentalRequest(request.queueNumber, request.client, copiedGame);
+            copiedRequest.vip = request.vip;
+            copiedRequest.quantity = request.quantity;
+            copiedRequest.rentalDays = request.rentalDays;
+            previewQueue.enqueue(copiedRequest);
+        }
+        ArrayList<RentalRequest> planned = new ArrayList<>();
+        RentalRequest next = previewQueue.findNextEligibleRequest();
+        while (next != null) {
+            planned.add(findByNumber(next.queueNumber));
+            next.game.availableCopies -= next.quantity;
+            previewQueue.recordCheckout(next);
+            previewQueue.remove(next);
+            next = previewQueue.findNextEligibleRequest();
+        }
+        return planned;
+    }
+
 }

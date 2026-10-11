@@ -18,6 +18,15 @@ public class BehaviorRegressionTest {
         ArrayList<String> rows = new ArrayList<>();
         int clears;
         int receipts;
+        boolean readResultNavigation;
+        ArrayList<String> resultDestinations = new ArrayList<>();
+        ArrayList<String> gameDrafts = new ArrayList<>();
+
+        void showNewGameConfirmation(String title, String platform, double price, int copies) {
+            gameDrafts.add(title + ":" + platform + ":" + price + ":" + copies);
+            super.showNewGameConfirmation(title, platform, price, copies);
+        }
+        ArrayList<String> screensAtInput = new ArrayList<>();
         int finishes;
         int queueScreens;
         int lastApproved;
@@ -31,6 +40,36 @@ public class BehaviorRegressionTest {
         int statusBoxes;
         int inputPanels;
         ArrayList<Integer> slipNumbers = new ArrayList<>();
+        ArrayList<Integer> customerQueueNumbers = new ArrayList<>();
+        ArrayList<Integer> customerQueuePositions = new ArrayList<>();
+        ArrayList<Integer> returnRows = new ArrayList<>();
+        ArrayList<Integer> returnShownNumbers = new ArrayList<>();
+        ArrayList<Integer> confirmedReturns = new ArrayList<>();
+        int platformScreens;
+
+        void showPlatformMenu(String heading, String destination, boolean hasCart) {
+            platformScreens++;
+            super.showPlatformMenu(heading, destination, hasCart);
+        }
+
+        void showReturnRow(int shown, Rental rental) {
+            returnRows.add(rental.rentalNumber);
+            returnShownNumbers.add(shown);
+            super.showReturnRow(shown, rental);
+        }
+
+        void showSelectedReturnSummary(ArrayList<Rental> selected, java.time.LocalDateTime returnedAt, RentalService service) {
+            for (Rental rental : selected) {
+                confirmedReturns.add(rental.rentalNumber);
+            }
+            super.showSelectedReturnSummary(selected, returnedAt, service);
+        }
+
+        void showQueueRequestRow(int position, RentalRequest request) {
+            customerQueueNumbers.add(request.queueNumber);
+            customerQueuePositions.add(position);
+            super.showQueueRequestRow(position, request);
+        }
 
         void clearScreen() {
             clears++;
@@ -102,6 +141,7 @@ public class BehaviorRegressionTest {
         }
 
         String readText(String prompt) {
+            screensAtInput.add(receipts + ":" + queueScreens);
             if (nextChoice >= choices.length) {
                 throw new AssertionError("Unexpected input prompt: " + prompt);
             }
@@ -120,6 +160,13 @@ public class BehaviorRegressionTest {
 
         void finishScreen() { finishes++; }
         void finishScreen(int width) { finishes++; }
+        boolean waitForResultNavigation(String previousDestination, String mainDestination) {
+            resultDestinations.add(previousDestination + ":" + mainDestination);
+            if (readResultNavigation) {
+                return super.waitForResultNavigation(previousDestination, mainDestination);
+            }
+            return false;
+        }
         void loading(String message) { }
         void pause(int milliseconds) { }
     }
@@ -128,6 +175,8 @@ public class BehaviorRegressionTest {
         int cooldownSeconds;
         int passwordPrompts;
         ArrayList<String> loginIdentifiers = new ArrayList<>();
+        ArrayList<Integer> attempts = new ArrayList<>();
+        ArrayList<Integer> countdown = new ArrayList<>();
         String summaryName;
         String summaryUsername;
         String summaryEmail;
@@ -143,6 +192,16 @@ public class BehaviorRegressionTest {
 
         void waitLoginSecond() {
             cooldownSeconds++;
+        }
+
+        void showLoginAttempt(int attempt) {
+            attempts.add(attempt);
+            super.showLoginAttempt(attempt);
+        }
+
+        void showCooldownRemaining(int seconds) {
+            countdown.add(seconds);
+            super.showCooldownRemaining(seconds);
         }
 
         void showLoginPasswordScreen(String login) {
@@ -348,22 +407,23 @@ public class BehaviorRegressionTest {
             ui.showLoginUsernameScreen();
             ui.info("");
             String text = output.toString("UTF-8");
-            check(text.contains("[0] Main Menu") && !text.contains("[B]"), "Login identifier shows only Main Menu");
+            check(text.contains("[B] Main Menu") && !text.contains("[M]"), "Login identifier shows only Main Menu");
             output.reset();
             ui.clearScreen();
             ui.showLoginPasswordScreen("entered@example.com");
             ui.info("");
             text = output.toString("UTF-8");
-            check(text.contains("[B] Back to Username/Email") && text.contains("[0] Main Menu"), "Login password options are explicit");
+            check(text.contains("[B] Username/Email") && text.contains("[C] Main Menu"), "Login password options are explicit");
             for (int step = 1; step <= 5; step++) {
                 output.reset();
                 ui.showRegistrationStep(step, false, "John Doe", "johndoe", "john@example.com");
                 ui.info("");
                 text = output.toString("UTF-8");
                 if (step == 1) {
-                    check(text.contains("[0] Main Menu") && !text.contains("[B]"), "First registration screen shows Main Menu");
+                    check(text.contains("[B] Main Menu") && !text.contains("[M]"), "First registration screen shows Main Menu");
                 } else {
-                    check(text.contains("[B] Previous Step") && text.contains("[C] Cancel Registration")
+                    String[] previousSteps = {"FULL NAME", "USERNAME", "EMAIL", "PASSWORD"};
+                    check(text.contains("[B] " + previousSteps[step - 2]) && text.contains("[C] Cancel Registration")
                             && !text.contains("[0]"), "Later registration screens show Previous Step and Cancel");
                 }
             }
@@ -374,6 +434,7 @@ public class BehaviorRegressionTest {
             check(text.contains("[B] Edit Information") && !text.contains("[0]"), "Field editing returns to Edit Information");
             output.reset();
             ui.showRegistrationConfirmation("John Doe", "johndoe", "john@example.com");
+            ui.inputBar("ENTER CHOICE");
             ui.info("");
             text = output.toString("UTF-8");
             check(text.contains("[1] Create Account") && text.contains("[E] Edit Information")
@@ -428,6 +489,379 @@ public class BehaviorRegressionTest {
         String logs = Files.readString(system.dataStore.file("logs.txt"));
         check(logs.contains("Failed login attempt") && logs.contains("Login: signin"), "Login successes and failures are logged");
         check(!logs.contains("TestPassword123") && !logs.contains("badpassword"), "Login logs contain no passwords");
+        int[] expectedAttempts = {1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2};
+        check(ui.attempts.size() == expectedAttempts.length, "Only authentication failures show attempt numbers");
+        for (int i = 0; i < expectedAttempts.length; i++) {
+            check(ui.attempts.get(i) == expectedAttempts[i], "Attempt count survives identifier changes and resets after success/cooldown");
+        }
+        check(ui.countdown.size() == 93, "Each cooldown draws all 31 countdown values");
+        for (int i = 0; i < ui.countdown.size(); i++) {
+            check(ui.countdown.get(i) == 30 - i % 31, "Countdown runs from 30 to zero");
+        }
+        ui.useChoices(new String[] {"signin", "b", "b"});
+        check(accounts.login() == null && ui.attempts.size() == expectedAttempts.length,
+                "B returns to identifier and then Main Menu without counting a failure");
+        ui.useChoices(new String[] {"signin", "c"});
+        check(accounts.login() == null && ui.attempts.size() == expectedAttempts.length,
+                "C cancels login from the password screen without counting a failure");
+    }
+
+    static void navigationFlowTests() {
+        GameRentalSystem system = freshSystem("navigation-flow");
+        User customer = client("navclient", "REGULAR");
+        ScriptedUI ui = script(system, new String[] {"bad", "b"});
+        system.viewActiveRentals();
+        check(ui.nextChoice == 2 && ui.clears == 1 && ui.errors.size() == 1,
+                "Empty active rentals stays visible through invalid input until Back");
+        ui = script(system, new String[] {"bad", "m"});
+        system.viewOverdueItems();
+        check(ui.nextChoice == 2 && system.isDashboardReturnRequested(), "Empty overdue screen supports Dashboard");
+        system.clearDashboardReturnRequest();
+        ui = script(system, new String[] {"bad", "B"});
+        system.viewAuditLog();
+        check(ui.nextChoice == 2 && ui.clears == 1, "Empty audit waits for Dashboard navigation");
+        ui = script(system, new String[] {"bad", "B"});
+        system.viewHistory(customer);
+        check(ui.nextChoice == 2 && ui.clears == 1, "Empty history remains visible");
+        ui = script(system, new String[] {"bad", "B"});
+        system.cancelMyRequest(customer);
+        check(ui.nextChoice == 2 && system.checkoutQueue.isEmpty(), "Empty customer queue remains visible without changes");
+        ui = script(system, new String[] {"bad", "B"});
+        system.processReturn();
+        check(ui.nextChoice == 2 && system.activeRentals.isEmpty(), "Empty returns remains visible without changes");
+        customer.membership = "VIP";
+        ui = script(system, new String[] {"B"});
+        system.upgradeToVip(customer);
+        check(ui.nextChoice == 1 && customer.isVip(), "Already-VIP screen stays visible until Dashboard navigation");
+        customer.membership = "REGULAR";
+        script(system, new String[] {"b"});
+        system.activeRentalsMenu();
+        script(system, new String[] {"b"});
+        system.manageInventory();
+        script(system, new String[] {"b"});
+        system.browseGames();
+        script(system, new String[] {"l", "Y"});
+        system.clientMenu(customer);
+        script(system, new String[] {"L", "YES"});
+        system.adminMenu(client("navadmin", "REGULAR"));
+        check(system.checkoutQueue.isEmpty() && system.allRentals.isEmpty(), "New navigation keys never change rental state");
+
+        system = freshSystem("retained-platform");
+        Game first = system.gameCatalog.addGame("First", "PS5", 2, 3);
+        Game second = system.gameCatalog.addGame("Second", "PS5", 2, 3);
+        Game xbox = system.gameCatalog.addGame("Third", "Xbox", 2, 3);
+        LinkedHashMap<Game, Integer> cart = new LinkedHashMap<>();
+        ui = script(system, new String[] {"2", "1", "1", "Y", "2", "1", "Y", "b", "3", "1", "1", "N"});
+        check(system.addGamesToCart(customer, cart) == 1 && cart.size() == 3,
+                "Add another goes directly to the selected platform and Back allows switching");
+        check(ui.platformScreens == 2 && cart.get(first) == 1 && cart.get(second) == 1 && cart.get(xbox) == 1,
+                "Switching platforms retains all cart lines");
+        check(first.availableCopies == 3 && xbox.availableCopies == 3 && system.checkoutQueue.isEmpty(),
+                "Platform selection does not change inventory or queue");
+        system.users.add(customer);
+        ui = script(system, new String[] {"3", "1", "1", "N", "1", "1"});
+        system.placeInQueue(customer);
+        check(ui.platformScreens == 1 && system.checkoutQueue.findByNumber(1).game == xbox,
+                "A new transaction starts with platform selection");
+        ui = script(system, new String[] {"2", "1", "b", "1", "1", "N", "1", "e", "3", "3", "b", "1"});
+        system.placeInQueue(customer);
+        check(system.checkoutQueue.findByNumber(2).rentalDays == 7 && ui.platformScreens == 1,
+                "B returns from quantity to games; E edits an order; B returns from edits to summary");
+        check(first.availableCopies == 3 && system.checkoutQueue.findByNumber(2).quantity == 1,
+                "Navigation and duration editing preserve quantity and stock rules");
+
+        system = freshSystem("finish-and-discard");
+        first = system.gameCatalog.addGame("First", "PS5", 2, 3);
+        cart = new LinkedHashMap<>();
+        ui = script(system, new String[] {"2", "1", "1", "Y", "F"});
+        check(system.addGamesToCart(customer, cart) == 1 && cart.get(first) == 1,
+                "Finish Selection after Add Another preserves the cart without requiring another game");
+        check(ui.nextChoice == 5 && ui.platformScreens == 1, "Finish retains the current platform");
+        ui = script(system, new String[] {"M", "bad", "N", "F"});
+        check(system.addGamesToCart(customer, cart) == 1 && cart.get(first) == 1
+                && !system.isDashboardReturnRequested(), "No keeps cart and selection; invalid discard answer retries");
+        check(ui.errors.contains("Use Y or N."), "Discard confirmation validates the answer");
+        ui = script(system, new String[] {"S", "M", "N", "B", "F"});
+        check(system.addGamesToCart(customer, cart) == 1 && ui.nextChoice == 5
+                && cart.get(first) == 1, "Declining discard from search stays at search until Back");
+        ui = script(system, new String[] {"B", "F"});
+        check(system.addGamesToCart(customer, cart) == 1 && cart.get(first) == 1,
+                "Finish Selection is available from platform selection with a cart");
+        ui = script(system, new String[] {"B", "N", "F"});
+        check(system.addGamesToCart(customer, cart) == 1 && !system.isDashboardReturnRequested(),
+                "Back to Dashboard from platform selection also confirms discarding");
+        ui = script(system, new String[] {"M", "Y"});
+        check(system.addGamesToCart(customer, cart) < 0 && system.isDashboardReturnRequested(),
+                "Yes allows leaving the rental transaction");
+        check(first.availableCopies == 3 && system.checkoutQueue.isEmpty() && system.allRentals.isEmpty(),
+                "Finish and discard navigation never processes or reserves stock");
+        system.clearDashboardReturnRequest();
+        system.users.add(customer);
+        ui = script(system, new String[] {"2", "1", "1", "N", "1", "E", "1", "F", "B", "1"});
+        system.placeInQueue(customer);
+        check(ui.nextChoice == 10 && ui.platformScreens == 1 && system.checkoutQueue.getRequests().size() == 1
+                && system.checkoutQueue.findByNumber(1).quantity == 1,
+                "Finish when editing returns to Edit Order, then Order Summary can submit the unchanged cart");
+
+        system = returnSystem("return-search-navigation", 1);
+        ui = script(system, new String[] {"s", "b", "b"});
+        check(system.selectActiveRentalsForReturn() == null && ui.nextChoice == 3,
+                "B in return search returns to the list without selecting a rental");
+        ui = script(system, new String[] {"s", "m"});
+        check(system.selectActiveRentalsForReturn() == null && system.isDashboardReturnRequested()
+                && system.activeRentals.size() == 1, "M in return search returns to Dashboard without processing rentals");
+
+        system = freshSystem("new-main-exit");
+        ui = script(system, new String[] {"q", "Y"});
+        system.start();
+        check(ui.nextChoice == 2, "Main menu accepts Q to exit");
+    }
+
+    static void choiceAndCooldownLayoutTests() throws Exception {
+        PrintStream previous = System.out;
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(output, true, "UTF-8"));
+        try {
+            AccountUI ui = new AccountUI(new String[] {});
+            ui.error("Incorrect username/email or password.");
+            ui.showLoginAttempt(1);
+            ui.showLoginPasswordScreen("alex");
+            ui.info("");
+            String text = output.toString("UTF-8");
+            check(text.contains("Attempt 1/3 — 2 attempts remaining"), "First failure visibly includes remaining attempts");
+            output.reset();
+            ui.error("Incorrect username/email or password.");
+            ui.showLoginAttempt(2);
+            ui.showLoginPasswordScreen("alex");
+            ui.info("");
+            check(output.toString("UTF-8").contains("Attempt 2/3 — 1 attempt remaining"), "Second failure visibly includes remaining attempt");
+            output.reset();
+            ui.error("Incorrect username/email or password.");
+            ui.showLoginAttempt(3);
+            ui.showLoginCooldown();
+            text = output.toString("UTF-8");
+            check(text.contains("Attempt 3/3 — Wait 30 seconds before") && text.contains("trying again"), "Third failure displays cooldown notice");
+            int updates = 0;
+            for (int i = 0; i < text.length() - 1; i++) {
+                if (text.charAt(i) == '\r' && text.charAt(i + 1) != '\n') {
+                    updates++;
+                }
+            }
+            check(text.contains("You can try again now.") && updates == 31,
+                    "Countdown updates the same line 31 times and shows completion");
+            check(ui.cooldownSeconds == 30, "Countdown still waits thirty one-second intervals");
+            output.reset();
+            ui.clearScreen();
+            ui.showBrowseMenu(false);
+            ui.info("");
+            text = output.toString("UTF-8");
+            check(text.contains("[B] Dashboard") && !text.contains("[M]"), "Direct dashboard child shows only one return option");
+            output.reset();
+            ui.clearScreen();
+            ui.showGameNavigation(0, 1, "");
+            ui.inputBar("ENTER CHOICE", ConsoleUI.GAME_TABLE_WIDTH);
+            ui.info("");
+            text = output.toString("UTF-8");
+            check(text.contains("[B] Select Platform") && text.contains("[M] Dashboard")
+                    && !text.contains("[N]") && !text.contains("[P]") && !text.contains("[X]"),
+                    "Deeper catalog shows named Back and Dashboard, with no unavailable page/clear actions");
+            check(text.indexOf("[S] Search") < text.indexOf("ENTER CHOICE"), "Catalog commands precede the separate input separator");
+            output.reset();
+            ui.clearScreen();
+            ui.showRentalDurationOptions("Edit Order");
+            ui.inputBar("ENTER CHOICE");
+            ui.info("");
+            text = output.toString("UTF-8");
+            check(text.contains("[B] Edit Order") && !text.contains("[B] Select Game"),
+                    "Duration editing names its actual previous screen");
+            output.reset();
+            ui.inputBar("ENTER CHOICE", 93,
+                    "[Y] Yes   [N] No   [B] Order Summary   [M] Dashboard\n"
+                    + "[C] Cancel   [L] Logout   [Q] Exit\n"
+                    + "[S] Search   [X] Clear Search   [T] Change Sort\n"
+                    + "[N] Next Page   [P] Previous Page   [E] Edit\n"
+                    + "[1] Select   [V] View Queue   [R] Receipt");
+            ui.info("");
+            text = output.toString("UTF-8");
+            String plain = positionedDrawing(output, 93);
+            for (String line : plain.split("\\R")) {
+                if (!line.isEmpty()) {
+                    check(line.length() == 93, "Choice coloring keeps input panel columns unchanged");
+                }
+            }
+            if (System.getenv("NO_COLOR") == null && !"false".equals(System.getProperty("q2p.color"))) {
+                check(text.contains("\u001B[1;92m[Y] Yes"), "Yes uses bold green");
+                check(text.contains("\u001B[1;91m[N] No"), "No uses bold red");
+                check(text.contains("\u001B[1;94m[N] Next Page"), "Next Page uses bold blue");
+                check(text.contains("\u001B[1;38;5;218m[B] Order Summary"), "Back uses bold pink");
+                check(text.contains("\u001B[1;97m[S] Search") && !text.contains("\u001B[1;96m"), "Search uses bold white without cyan");
+                check(text.contains("\u001B[1;93m[E] Edit"), "Edit uses bold yellow");
+            } else {
+                check(!text.contains("\u001B["), "Choice colors respect disabled colors");
+            }
+        } finally {
+            System.setOut(previous);
+        }
+    }
+
+    static void rentalPanelTests() throws Exception {
+        PrintStream previous = System.out;
+        String previousWidth = System.getProperty("q2p.width");
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(output, true, "UTF-8"));
+        System.setProperty("q2p.width", "120");
+        try {
+            ConsoleUI ui = new ConsoleUI();
+            LinkedHashMap<Game, Integer> cart = new LinkedHashMap<>();
+            cart.put(new Game("P001", "First", "PS5", 2, 3), 2);
+            cart.put(new Game("X001", "Second", "Xbox", 2, 3), 1);
+            ui.showCatalogState("", 0, 1, 2, cart);
+            ui.showGameNavigation(0, 2, "First", true, true, 9);
+            ui.inputBar("ENTER CHOICE", 93);
+            ui.info("");
+            String plain = positionedDrawing(output, 93);
+            String[] lines = plain.split("\\R");
+            check(lines[0].length() == 93 && lines[0].endsWith("Page: 1/2"), "Page aligns to the far right");
+            check(lines[1].length() == 93 && lines[1].endsWith("Cart: 2 games · 3 copies"), "Cart totals align right on the Sort row");
+            check(plain.contains("[S] Search      [T] Sort      [X] Clear Search"), "Three tool choices have six-space gaps");
+            check(!plain.contains("Type an option") && !plain.contains("Enter a displayed")
+                    && !plain.contains("[C]"), "Rental panel omits generic tutorials and duplicate cancellation");
+            int blankRows = 0;
+            for (String line : lines) {
+                if (line.startsWith("│") || line.startsWith("|")) {
+                    check(line.length() == 93, "Rental input rows keep the panel width");
+                    String contents = line.substring(1, line.length() - 1);
+                    if (contents.trim().isEmpty()) {
+                        blankRows++;
+                    } else if (contents.contains("[")) {
+                        String row = contents.trim();
+                        int left = contents.indexOf(row);
+                        int right = contents.length() - left - row.length();
+                        check(Math.abs(left - right) <= 1, "Every choice row is centered individually");
+                    }
+                }
+            }
+            check(blankRows == 4, "Options have top/bottom padding and one blank row between categories");
+            output.reset();
+            ui.showPlatformMenu("CLIENT > RENT GAMES", "Dashboard", true);
+            ui.info("");
+            String text = output.toString("UTF-8");
+            check(!text.contains("\u001B[1;96m"), "Platform choices contain no cyan");
+            if (System.getenv("NO_COLOR") == null && !"false".equals(System.getProperty("q2p.color"))) {
+                check(text.contains("\u001B[1;95m[1] Browse All Games"), "All Games uses violet");
+                check(text.contains("\u001B[1;94m[2] PS5"), "PS5 uses blue");
+                check(text.contains("\u001B[1;92m[3] Xbox"), "Xbox uses green");
+                check(text.contains("\u001B[1;91m[4] Nintendo"), "Nintendo uses red");
+            }
+            for (int width : new int[] {81, 60, 40}) {
+                System.setProperty("q2p.width", String.valueOf(width));
+                ui = new ConsoleUI();
+                output.reset();
+                ui.showGameNavigation(0, 2, "First", true, true, 9);
+                ui.inputBar("ENTER CHOICE", 93);
+                ui.info("");
+                plain = output.toString("UTF-8").replaceAll("\u001B\\[[0-9;]*[mHJ]", "");
+                check(plain.contains("[M] Discard Cart / Dashboard") && plain.contains("[F] Finish Selection"),
+                        "Narrow panels retain complete long choices");
+                for (String line : plain.split("\\R")) {
+                    check(line.length() <= width, "Narrow panel lines fit the terminal");
+                }
+            }
+        } finally {
+            System.setOut(previous);
+            if (previousWidth == null) {
+                System.clearProperty("q2p.width");
+            } else {
+                System.setProperty("q2p.width", previousWidth);
+            }
+        }
+    }
+
+    static void checkVerticalMenu(String text, String[] options) {
+        String plain = text.replaceAll("\u001B\\[[0-9;]*[mHJ]", "");
+        int previousRow = -1;
+        int left = -1;
+        String[] lines = plain.split("\\R");
+        for (String option : options) {
+            int found = -1;
+            for (int i = 0; i < lines.length; i++) {
+                if (lines[i].contains(option)) {
+                    found = i;
+                    check(lines[i].contains("│") || lines[i].contains("|"), "Menu option stays inside its box");
+                    check(lines[i].indexOf("[") == lines[i].lastIndexOf("["), "Menu has one option per row");
+                    if (left < 0) {
+                        left = lines[i].indexOf("[");
+                        check(i > 0 && lines[i - 1].replace("│", "").replace("|", "").trim().isEmpty(),
+                                "Menu has one blank row between its top border and first option");
+                    }
+                    check(lines[i].indexOf("[") == left, "Numbered menu labels share the same left edge: " + left + " vs " + lines[i]);
+                    break;
+                }
+            }
+            check(found > previousRow, "Menu options are present in their original order");
+            previousRow = found;
+        }
+        boolean separate = false;
+        for (String line : lines) {
+            if (line.contains("ENTER CHOICE")) {
+                check(!line.contains("┌") && !line.contains("+") && !line.contains("│"), "Input label is outside the options box");
+                separate = true;
+            }
+        }
+        check(separate, "Menu includes a separate input separator");
+        int firstOption = plain.indexOf(options[0]);
+        check(firstOption < plain.indexOf("ENTER CHOICE"), "Options appear before the input separator");
+        for (int i = previousRow + 1; i < lines.length; i++) {
+            String line = lines[i].trim();
+            if (line.startsWith("└") || line.matches("\\+-+\\+")) {
+                check(lines[i - 1].replace("│", "").replace("|", "").trim().isEmpty(),
+                        "Menu has one blank row between its final option and bottom border");
+                break;
+            }
+        }
+    }
+
+    static void menuLayoutTests() throws Exception {
+        PrintStream previous = System.out;
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(output, true, "UTF-8"));
+        try {
+            ConsoleUI ui = new ConsoleUI();
+            ui.showMainMenu();
+            checkVerticalMenu(output.toString("UTF-8"), new String[] {"[1] Login", "[2] Register"});
+            output.reset();
+            ui.showClientMenu(client("juan", "REGULAR"));
+            checkVerticalMenu(output.toString("UTF-8"), new String[] {"[1] Browse Games", "[2] Rent Games", "[3] My Queue", "[4] Rental History", "[5] VIP Membership"});
+            output.reset();
+            ui.showAdminMenu();
+            checkVerticalMenu(output.toString("UTF-8"), new String[] {"[1] Checkout", "[2] Process Returns", "[3] Inventory", "[4] Active Rentals", "[5] Audit Log"});
+            output.reset();
+            ui.showInventoryMenu();
+            checkVerticalMenu(output.toString("UTF-8"), new String[] {"[1] Browse Inventory", "[2] Add Game", "[3] Update Stock", "[4] Delete Game"});
+            output.reset();
+            ui.showBrowseMenu(false);
+            checkVerticalMenu(output.toString("UTF-8"), new String[] {"[1] Browse All Games", "[2] PS5 Games", "[3] Xbox Games", "[4] Nintendo Games"});
+            output.reset();
+            ui.showActiveRentalsMenu();
+            checkVerticalMenu(output.toString("UTF-8"), new String[] {"[1] All Active Rentals", "[2] Overdue Rentals"});
+            output.reset();
+            ui.showLoginUsernameScreen();
+            String plain = output.toString("UTF-8").replaceAll("\u001B\\[[0-9;]*[mHJ]", "");
+            for (String line : plain.split("\\R")) {
+                if (line.contains("Username or email") || line.contains("[B] Main Menu")) {
+                    check(line.contains("║") || line.contains("│") || line.contains("|"), "Login details and navigation stay boxed");
+                }
+                if (line.contains("USERNAME OR EMAIL")) {
+                    check(!line.contains("┌") && !line.contains("+"), "Login field uses a separate labeled separator");
+                }
+            }
+            output.reset();
+            ui.showRegistrationStep(1, false, "", "", "");
+            plain = output.toString("UTF-8").replaceAll("\u001B\\[[0-9;]*[mHJ]", "");
+            check(plain.contains("[B] Main Menu") && plain.contains(" FULL NAME "), "Registration retains navigation and a field label");
+        } finally {
+            System.setOut(previous);
+        }
     }
 
     static void catalogTests() {
@@ -458,8 +892,8 @@ public class BehaviorRegressionTest {
         check(system.gameCatalog.getDisplayList(all, "", 0).equals(all), "Default restores original order");
         check(system.gameCatalog.getDisplayList(new ArrayList<Game>(), "", 4).isEmpty(), "Empty sort works");
         for (int i = 0; i < 4; i++) system.gameCatalog.addGame("Extra " + i, "PS5", 2, 1);
-        ScriptedUI ui = script(system, new String[] {"N", "S", "minecraft", "S", "Xbox", "O", "X",
-            "N", "O", "O", "O", "O", "S", "missing", "S", "PS5", "P", "0"});
+        ScriptedUI ui = script(system, new String[] {"N", "S", "minecraft", "S", "Xbox", "T", "X",
+            "N", "T", "T", "T", "T", "S", "missing", "S", "PS5", "P", "0"});
         system.viewGames("ALL");
         check(ui.screens.contains(":0:2:2"), "Next page has remaining games");
         check(ui.screens.contains("Xbox:0:1:1"), "Second search uses full list");
@@ -483,8 +917,8 @@ public class BehaviorRegressionTest {
         User regular = client("regular", "REGULAR");
         system.users.add(regular);
         system.games.get("P001").availableCopies = 5;
-        script(system, new String[] {"1", "1", "2", "Y", "1", "1", "4", "1", "Y",
-            "1", "4", "1", "N", "2", "1"});
+        script(system, new String[] {"1", "1", "2", "Y", "1", "4", "1", "Y",
+            "4", "1", "N", "2", "1"});
         system.placeInQueue(regular);
         check(system.checkoutQueue.getRequests().size() == 2, "One request per distinct game");
         RentalRequest first = system.checkoutQueue.getRequests().get(0);
@@ -521,7 +955,7 @@ public class BehaviorRegressionTest {
         User regular = client("stockclient", "REGULAR");
         system.users.add(regular);
         Game game = system.gameCatalog.addGame("Limited Stock", "PS5", 5, 3);
-        ScriptedUI ui = script(system, new String[] {"1", "1", "4", "2", "Y", "1", "1", "2", "1", "N", "1", "1"});
+        ScriptedUI ui = script(system, new String[] {"1", "1", "4", "2", "Y", "1", "2", "1", "N", "1", "1"});
         system.placeInQueue(regular);
         RentalRequest queued = system.checkoutQueue.findByNumber(1);
         check(queued != null && queued.quantity == 3 && system.checkoutQueue.getRequests().size() == 1,
@@ -576,8 +1010,8 @@ public class BehaviorRegressionTest {
 
         game.availableCopies = 3;
         cart.put(game, 3);
-        ui = script(system, new String[] {"1", "1", "0", "0"});
-        check(system.addGamesToCart(regular, cart) == 0 && cart.get(game) == 3,
+        ui = script(system, new String[] {"1", "1", "F"});
+        check(system.addGamesToCart(regular, cart) == 1 && cart.get(game) == 3,
             "Selecting a cart line already at stock does not increase its quantity");
         check(ui.errors.get(0).contains("maximum of 3"),
             "Full-limit cart line gives a clear selection error");
@@ -658,7 +1092,7 @@ public class BehaviorRegressionTest {
         game = system.gameCatalog.addGame("Spider-Man 2", "PS5", 5, 5);
         enqueue(system, regular, game, 1);
         enqueue(system, regular, game, 2);
-        ui = script(system, new String[] {"X", "2", "Y", "0"});
+        ui = script(system, new String[] {"C", "2", "Y", "0"});
         system.checkoutManagement();
         check(system.checkoutQueue.queuedCopies(regular, game) == 1, "Cancelling a repeat request frees its quantity allowance");
         ui = script(system, new String[] {"1", "1", "3", "2", "N", "2", "1"});
@@ -731,6 +1165,291 @@ public class BehaviorRegressionTest {
             "Older completed rental history keeps its original quantity");
     }
 
+    static void predictedQueueTests() throws Exception {
+        GameRentalSystem system = freshSystem("predicted-queue");
+        User vip = client("positionvip", "VIP");
+        User regular = client("positionreg", "REGULAR");
+        system.users.add(vip);
+        system.users.add(regular);
+        RentalRequest[] requests = new RentalRequest[5];
+        for (int i = 0; i < 5; i++) {
+            Game game = system.gameCatalog.addGame("Position Game " + i, "PS5", 5, 3);
+            User user = vip;
+            if (i == 4) {
+                user = regular;
+            }
+            requests[i] = enqueue(system, user, game, 1);
+        }
+        ArrayList<RentalRequest> original = system.checkoutQueue.getRequests();
+        ArrayList<RentalRequest> ready = system.checkoutQueue.previewReadyRequests();
+        int[] expected = {1, 2, 3, 5, 4};
+        for (int i = 0; i < expected.length; i++) {
+            check(ready.get(i).queueNumber == expected[i], "Display follows three-VIP fairness");
+            check(system.checkoutQueue.getPosition(ready.get(i)) == i + 1, "Position matches processing order");
+        }
+        check(system.previewReadyCheckouts().equals(ready), "Batch and queue use the same preview");
+        check(system.checkoutQueue.getRequests().equals(original) && system.checkoutQueue.vipStreak == 0,
+                "Preview leaves the real queue and streak unchanged");
+        for (RentalRequest request : requests) {
+            check(request.game.availableCopies == 3, "Preview leaves real stock unchanged");
+        }
+        system.checkoutQueue.vipStreak = 2;
+        ready = system.checkoutQueue.previewReadyRequests();
+        check(ready.get(0) == requests[0] && ready.get(1) == requests[4], "Existing streak allows just one VIP before regular");
+        system.checkoutQueue.vipStreak = 3;
+        check(system.checkoutQueue.getPosition(requests[4]) == 1, "Existing full streak puts regular first");
+        system.checkoutQueue.vipStreak = 0;
+        requests[1].game.availableCopies = 0;
+        ready = system.checkoutQueue.previewReadyRequests();
+        expected = new int[] {1, 3, 4, 5};
+        for (int i = 0; i < expected.length; i++) {
+            check(ready.get(i).queueNumber == expected[i], "Unavailable VIP is skipped without consuming a VIP turn");
+        }
+        check(system.checkoutQueue.getPosition(requests[1]) == 0, "Waiting request has no processing position");
+        check(system.checkoutQueue.getDisplayRequests(ready).get(4) == requests[1], "Waiting request displayed after ready requests");
+
+        PrintStream previous = System.out;
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(output, true, "UTF-8"));
+        try {
+            ConsoleUI ui = new ConsoleUI();
+            ui.showCheckoutQueue(system.checkoutQueue, system.rentalService);
+            String drawing = output.toString("UTF-8");
+            int[] displayed = {1, 3, 4, 5, 2};
+            int last = -1;
+            for (int number : displayed) {
+                int at = drawing.indexOf(ui.queueLabel(number));
+                check(at > last, "Admin rows follow ready order then waiting");
+                last = at;
+            }
+            check(drawing.contains("POS") && drawing.contains("WAITING"), "Admin labels position and waiting explicitly");
+            output.reset();
+            ui.showQueueRequestHeader();
+            ui.showQueueRequestRow(0, requests[1]);
+            ui.info("");
+            check(output.toString("UTF-8").contains("WAITING"), "Customer waiting row prints text instead of a position");
+        } finally {
+            System.setOut(previous);
+        }
+        ScriptedUI ui = script(system, new String[] {"0"});
+        system.cancelMyRequest(vip);
+        int[] vipIds = {1, 3, 4, 2};
+        int[] vipPositions = {1, 2, 3, 0};
+        for (int i = 0; i < vipIds.length; i++) {
+            check(ui.customerQueueNumbers.get(i) == vipIds[i] && ui.customerQueuePositions.get(i) == vipPositions[i],
+                    "Customer rows match the global admin positions");
+        }
+        ui = script(system, new String[] {"0"});
+        system.cancelMyRequest(regular);
+        check(ui.customerQueuePositions.get(0) == 4, "Regular customer sees global position four");
+        requests[1].game.availableCopies = 3;
+        check(system.checkoutQueue.getPosition(requests[4]) == 4 && system.checkoutQueue.getPosition(requests[1]) == 2,
+                "Restocking recalculates positions");
+        Rental rental = system.rentalService.checkout(requests[0], system.nextRentalNumber++);
+        check(system.checkoutQueue.getPosition(requests[1]) == 1 && system.checkoutQueue.vipStreak == 1,
+                "Approval recalculates positions using the updated streak");
+        system.checkoutQueue.remove(requests[1]);
+        check(system.checkoutQueue.getPosition(requests[4]) == 3, "Cancellation recalculates positions");
+        regular.membership = "VIP";
+        system.checkoutQueue.refreshMembership(regular);
+        check(system.checkoutQueue.getPosition(requests[3]) == 2 && system.checkoutQueue.getPosition(requests[4]) == 3,
+                "Membership changes preserve arrival order inside the VIP group");
+        check(rental.status.equals("ACTIVE"), "Rendering leaves the rental active");
+
+        system = freshSystem("predicted-shared-stock");
+        User first = client("firstqueue", "VIP");
+        User second = client("secondqueue", "REGULAR");
+        system.users.add(first);
+        system.users.add(second);
+        Game shared = system.gameCatalog.addGame("Shared Stock", "Xbox", 5, 3);
+        RentalRequest firstRequest = enqueue(system, first, shared, 2);
+        RentalRequest secondRequest = enqueue(system, second, shared, 2);
+        ready = system.checkoutQueue.previewReadyRequests();
+        check(ready.size() == 1 && ready.get(0) == firstRequest, "Preview accounts for stock consumed by earlier requests");
+        check(system.checkoutQueue.getPosition(secondRequest) == 0 && shared.availableCopies == 3,
+                "Shared-stock shortage waits without reserving real stock");
+        system.checkoutQueue.vipStreak = 3;
+        check(system.checkoutQueue.getPosition(secondRequest) == 1 && system.checkoutQueue.getPosition(firstRequest) == 0,
+                "Fairness can change which shared-stock request is ready");
+        system.checkoutQueue.vipStreak = 0;
+        rental = system.rentalService.checkout(firstRequest, system.nextRentalNumber++);
+        check(system.checkoutQueue.getPosition(secondRequest) == 0, "Request remains waiting after stock deduction");
+        system.rentalService.completeReturn(rental, rental.checkoutDate.plusDays(1));
+        check(system.checkoutQueue.getPosition(secondRequest) == 1 && shared.availableCopies == 3,
+                "Returned stock makes waiting request ready");
+        secondRequest.game.availableCopies = 0;
+        check(system.checkoutQueue.previewReadyRequests().isEmpty(), "All waiting queue has no positions");
+        system.checkoutQueue.clear();
+        check(system.checkoutQueue.previewReadyRequests().isEmpty()
+                && system.checkoutQueue.getDisplayRequests(new ArrayList<RentalRequest>()).isEmpty(), "Empty display queue works");
+
+        system = freshSystem("submitted-positions");
+        vip = client("submittedvip", "VIP");
+        regular = client("submittedreg", "REGULAR");
+        system.users.add(vip);
+        system.users.add(regular);
+        for (int i = 0; i < 4; i++) {
+            Game game = system.gameCatalog.addGame("Submitted Game " + i, "PS5", 5, 3);
+            enqueue(system, vip, game, 1);
+        }
+        ui = script(system, new String[] {"1", "1", "1", "N", "2", "1"});
+        system.placeInQueue(regular);
+        check(ui.customerQueueNumbers.get(0) == 5 && ui.customerQueuePositions.get(0) == 4,
+                "Order Submitted shows the same processing position as admin and My Queue");
+    }
+
+    static GameRentalSystem returnSystem(String name, int count) {
+        GameRentalSystem system = freshSystem(name);
+        User user = client("returnclient", "REGULAR");
+        system.users.add(user);
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+        for (int i = 0; i < count; i++) {
+            Game game = system.gameCatalog.addGame("Return Game " + i, "PS5", 5, 3);
+            RentalRequest request = enqueue(system, user, game, 2);
+            Rental rental = system.rentalService.checkout(request, system.nextRentalNumber++);
+            rental.checkoutDate = now.minusDays(15);
+            rental.dueDate = now.plusDays(count - i - 3);
+        }
+        // Rebuild the heap after preparing the isolated dates.
+        system.activeRentals.clear();
+        system.activeRentals.addAll(system.allRentals);
+        system.dataStore.saveData();
+        return system;
+    }
+
+    static void returnTests() throws Exception {
+        GameRentalSystem system = returnSystem("return-selection", 11);
+        ArrayList<Rental> sorted = system.rentalService.getRentalsByDueDate();
+        check(sorted.get(0).rentalNumber == 11 && sorted.get(10).rentalNumber == 1, "Return list starts with earliest due date");
+        ScriptedUI ui = script(system, new String[] {});
+        ArrayList<Rental> selected = system.parseReturnSelection(sorted, 0, 9, "5,1,3");
+        check(selected.size() == 3 && selected.get(0) == sorted.get(0) && selected.get(1) == sorted.get(2)
+                && selected.get(2) == sorted.get(4), "Multiple selection uses due-date order instead of input order");
+        String[] invalid = {"", "1,", ",1", "1,,2", "1,1", "0,1", "10", "-1", "abc", "999999999999999999"};
+        for (String input : invalid) {
+            check(system.parseReturnSelection(sorted, 0, 9, input) == null, "Invalid selection rejected: " + input);
+        }
+        check(system.parseReturnSelection(sorted, 9, 11, "2").get(0) == sorted.get(10), "Last-page number maps to displayed rental");
+        check(system.parseReturnSelection(sorted, 9, 11, "3") == null, "Off-page number rejected");
+        check(system.searchReturnRentals("RETURNCLIENT").equals(sorted), "Customer search ignores case and preserves order");
+        check(system.searchReturnRentals("Test Client").equals(sorted), "Full customer name can be searched");
+        check(system.searchReturnRentals(sorted.get(0).game.gameId.toLowerCase()).get(0) == sorted.get(0), "Complete game ID finds the correct rental");
+        check(system.searchReturnRentals("Game 1").size() == 2, "Partial title search");
+        check(system.searchReturnRentals("missing").isEmpty(), "No-match search");
+        ui = script(system, new String[] {"N", "2"});
+        selected = system.selectActiveRentalsForReturn();
+        check(selected.get(0).rentalNumber == 1, "Second-page selection keeps earliest-due order");
+        check(ui.returnShownNumbers.get(9) == 1 && ui.returnShownNumbers.get(10) == 2, "Each page starts numbering at one");
+        ui = script(system, new String[] {"N", "S", "missing", "X", "S", sorted.get(0).game.gameId, "1"});
+        selected = system.selectActiveRentalsForReturn();
+        check(selected.size() == 1 && selected.get(0) == sorted.get(0), "Search, no results, clear and ID selection work");
+        check(ui.returnShownNumbers.get(ui.returnShownNumbers.size() - 1) == 1, "Search resets to page one");
+        ui = script(system, new String[] {"P", "N", "P", "0"});
+        check(system.selectActiveRentalsForReturn() == null && !ui.errors.isEmpty(), "Pagination boundaries and dashboard exit work");
+        check(system.activeRentals.size() == 11 && sorted.get(0).game.availableCopies == 1, "Selection and search never return stock");
+
+        system = returnSystem("return-batch", 3);
+        sorted = system.rentalService.getRentalsByDueDate();
+        ui = script(system, new String[] {"3,1", "maybe", "YES", "N"});
+        system.processReturn();
+        check(ui.confirmedReturns.size() == 2 && ui.confirmedReturns.get(0) == 3 && ui.confirmedReturns.get(1) == 1,
+                "Confirmation follows due-date order and invalid answer does not repeat the summary");
+        check(ui.errors.contains("Use Y to confirm or N to return to the list."), "Invalid confirmation retries");
+        check(sorted.get(0).status.equals("COMPLETED") && sorted.get(2).status.equals("COMPLETED")
+                && sorted.get(1).status.equals("ACTIVE"), "Batch completes exactly the selected rentals");
+        for (Rental rental : new Rental[] {sorted.get(0), sorted.get(2)}) {
+            check(rental.game.availableCopies == 3, "Return restores the full quantity");
+            check(rental.lateFee == system.rentalService.calculateLateFee(rental, rental.daysLate), "Each rental uses the original late fee formula");
+        }
+        check(sorted.get(0).returnDate.equals(sorted.get(2).returnDate), "Batch shares one confirmed return timestamp");
+        GameRentalSystem loaded = freshSystem("return-batch");
+        loaded.accountService.loadAccounts();
+        loaded.dataStore.loadGames();
+        loaded.dataStore.loadRentals();
+        check(loaded.activeRentals.size() == 1 && loaded.allRentals.size() == 3, "Batch returns survive reload");
+        ui = script(system, new String[] {"1", "NO", "0"});
+        system.processReturn();
+        check(system.activeRentals.size() == 1, "NO returns to list without changing rentals");
+        ui = script(system, new String[] {"1", "Y"});
+        system.processReturn();
+        check(system.activeRentals.isEmpty() && ui.resultDestinations.contains(":Dashboard"),
+                "Single return completes and requests result navigation to Dashboard");
+        ui = script(system, new String[] {"B"});
+        system.processReturn();
+        check(ui.nextChoice == 1, "Empty returns screen waits for Dashboard navigation");
+
+        system = returnSystem("return-rollback", 2);
+        selected = system.rentalService.getRentalsByDueDate();
+        Files.writeString(system.dataStore.file("accounts.txt"), "external test change");
+        boolean failed = false;
+        try {
+            system.completeSelectedReturns(selected, java.time.LocalDateTime.now());
+        } catch (StorageException e) {
+            failed = true;
+        }
+        check(failed && system.activeRentals.size() == 2, "Failed save rolls back the whole batch");
+        for (Rental rental : selected) {
+            check(rental.status.equals("ACTIVE") && rental.returnDate == null && rental.game.availableCopies == 1,
+                    "Rollback restores each rental and its stock");
+        }
+
+        system = returnSystem("return-validation", 2);
+        selected = system.rentalService.getRentalsByDueDate();
+        selected.get(1).status = "COMPLETED";
+        boolean rejected = false;
+        try {
+            system.completeSelectedReturns(selected, java.time.LocalDateTime.now());
+        } catch (IllegalArgumentException e) {
+            rejected = true;
+        }
+        check(rejected && selected.get(0).status.equals("ACTIVE") && selected.get(0).game.availableCopies == 1,
+                "Invalid later rental rejects the batch before changing an earlier rental");
+
+        system = freshSystem("return-shared-game");
+        User first = client("returnfirst", "REGULAR");
+        User second = client("returnsecond", "VIP");
+        system.users.add(first);
+        system.users.add(second);
+        Game shared = system.gameCatalog.addGame("Shared Return Game", "Xbox", 5, 5);
+        Rental firstRental = system.rentalService.checkout(enqueue(system, first, shared, 2), system.nextRentalNumber++);
+        Rental secondRental = system.rentalService.checkout(enqueue(system, second, shared, 2), system.nextRentalNumber++);
+        system.dataStore.saveData();
+        selected = system.rentalService.getRentalsByDueDate();
+        system.completeSelectedReturns(selected, java.time.LocalDateTime.now());
+        check(shared.availableCopies == 5 && firstRental.status.equals("COMPLETED") && secondRental.status.equals("COMPLETED"),
+                "Multiple customers returning the same game restore each quantity exactly once");
+        rejected = false;
+        try {
+            system.completeSelectedReturns(selected, java.time.LocalDateTime.now());
+        } catch (IllegalArgumentException e) {
+            rejected = true;
+        }
+        check(rejected && shared.availableCopies == 5, "Completed rentals cannot be returned twice");
+
+        system = returnSystem("return-rendering", 2);
+        selected = system.rentalService.getRentalsByDueDate();
+        PrintStream previous = System.out;
+        ByteArrayOutputStream drawing = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(drawing, true, "UTF-8"));
+        try {
+            ConsoleUI console = new ConsoleUI();
+            console.showReturnSelectionList(selected, 0, 2, 0, 1, "");
+            console.info("");
+            console.showSelectedReturnSummary(selected, java.time.LocalDateTime.now(), system.rentalService);
+            console.info("");
+        } finally {
+            System.setOut(previous);
+        }
+        String plain = positionedDrawing(drawing, ConsoleUI.RETURN_TABLE_WIDTH);
+        for (String line : plain.split("\\R")) {
+            if (line.contains(" | ") && (line.contains("#00") || line.contains("LATE FEE") || line.contains("NO."))) {
+                check(line.length() == ConsoleUI.RETURN_TABLE_WIDTH, "Return table rows retain the 95-column width");
+            }
+        }
+        check(plain.contains("EARLIEST DUE DATE FIRST") && plain.contains("RENTAL #") && plain.contains("LATE FEE")
+                && plain.contains("Total late fees:"), "Return summary displays rental IDs, due-date order and individual fees");
+    }
+
     static void queueTests() {
         GameRentalSystem system = freshSystem("queue");
         User vip = client("vipclient", "VIP");
@@ -770,8 +1489,8 @@ public class BehaviorRegressionTest {
         check(system.rentalService.validateCart(regular, cart) != null, "Active game cannot be requested again");
         check(vip.rentalHistory.peek().amount == 4.5, "VIP discount recorded");
         system.dataStore.saveData();
-        ScriptedUI cancellationUI = script(system, new String[] {"", "N", "X", String.valueOf(waiting.queueNumber), "N",
-            "X", String.valueOf(waiting.queueNumber), "Y", "M"});
+        ScriptedUI cancellationUI = script(system, new String[] {"", "N", "C", String.valueOf(waiting.queueNumber), "N",
+            "C", String.valueOf(waiting.queueNumber), "Y", "M"});
         system.checkoutManagement();
         check(system.checkoutQueue.findByNumber(waiting.queueNumber) == null,
             "Cancel any waiting request from shared queue screen. Errors: " + cancellationUI.errors);
@@ -788,7 +1507,7 @@ public class BehaviorRegressionTest {
         script(loaded, new String[] {"", "Y", "0"});
         loaded.checkoutManagement();
         check(loaded.checkoutQueue.isEmpty() && loaded.activeRentals.size() == 5, "Approve from shared screen saves checkout");
-        script(loaded, new String[] {"", "X", "0", "0"});
+        script(loaded, new String[] {"", "C", "0", "0"});
         loaded.checkoutManagement();
         check(loaded.checkoutQueue.isEmpty(), "Empty queue controls stay usable");
         CheckoutQueue queue = new CheckoutQueue();
@@ -823,6 +1542,185 @@ public class BehaviorRegressionTest {
         return system;
     }
 
+    static void gameEditingTests() throws Exception {
+        GameRentalSystem system = freshSystem("game-field-editing");
+        ScriptedUI ui = script(system, new String[] {"Draft Game", "1", "5", "3",
+                "E", "3", "NaN", "B", "E", "3", "6", "E", "4", "0", "B",
+                "E", "4", "4", "E", "1", "Edited Game", "E", "2", "2",
+                "E", "B", "B", "5", "1", "N"});
+        system.addGame();
+        Game game = system.games.get("X001");
+        check(ui.nextChoice == 30 && system.games.size() == 1, "Editing each field adds exactly one game only on confirmation");
+        check(game.title.equals("Edited Game") && game.platform.equals("Xbox") && game.price == 6
+                && game.availableCopies == 5, "Title, platform, price and stock edits preserve the other fields");
+        check(ui.gameDrafts.get(1).equals("Draft Game:PS5:5.0:3"), "Invalid price followed by Back keeps the original draft");
+        check(ui.gameDrafts.contains("Draft Game:PS5:6.0:3"), "Invalid copies followed by Back preserves valid price and original copies");
+        check(ui.gameDrafts.contains("Edited Game:Xbox:6.0:4"), "Field editing returns directly to the complete summary");
+        GameRentalSystem loaded = freshSystem("game-field-editing");
+        loaded.dataStore.loadGames();
+        check(loaded.games.get("X001").title.equals("Edited Game") && loaded.games.get("X001").price == 6,
+                "Edited game values survive save and reload");
+
+        system = freshSystem("game-edit-duplicates");
+        system.gameCatalog.addGame("Taken", "PS5", 2, 2);
+        system.gameCatalog.addGame("Other", "Xbox", 2, 2);
+        ui = script(system, new String[] {"Other", "1", "5", "3", "E", "1", "Taken", "B",
+                "E", "2", "2", "B", "E", "3", "Infinity", "B", "E", "4", "abc", "B", "1", "N"});
+        system.addGame();
+        check(ui.nextChoice == 22 && system.games.size() == 3 && ui.errors.size() == 4,
+                "Duplicate title/platform and invalid numeric edits retry without adding games");
+        for (String draft : ui.gameDrafts) {
+            check(draft.equals("Other:PS5:5.0:3"), "Rejected edits and Back retain every previous value");
+        }
+        check(system.games.get("P002").title.equals("Other"), "Editing does not consume a game ID before saving");
+
+        system = freshSystem("game-edit-cancel");
+        ui = script(system, new String[] {"Cancel Draft", "1", "5", "3", "E", "1", "C"});
+        system.addGame();
+        check(system.games.isEmpty() && system.auditLog.isEmpty(), "Cancel during editing saves no game or audit entry");
+        ui = script(system, new String[] {"Dashboard Draft", "1", "5", "3", "E", "3", "M"});
+        system.addGame();
+        check(system.games.isEmpty() && system.isDashboardReturnRequested(), "Dashboard during editing saves no draft");
+    }
+
+    static void categoryLayoutTests() throws Exception {
+        PrintStream previous = System.out;
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(output, true, "UTF-8"));
+        try {
+            ConsoleUI ui = new ConsoleUI();
+            ui.printHeader("CATEGORY TEST");
+            ui.showNewGameConfirmation("Draft", "PS5", 5, 3);
+            ui.inputBar("ENTER CHOICE");
+            String text = output.toString("UTF-8").replaceAll("\u001B\\[[0-9;]*[mHJ]", "");
+            int action = text.indexOf("[1] Confirm Add");
+            int cancel = text.indexOf("[C] Cancel Transaction");
+            int navigation = text.indexOf("[B] Available Copies");
+            check(action < cancel && cancel < navigation, "Confirm/Edit, Cancel, then Back/Dashboard categories appear in order");
+            check(text.contains("[B] Available Copies"), "Summary retains the existing Available Copies Back option");
+            for (String line : text.split("\\R")) {
+                if (line.contains("[C]")) {
+                    check(!line.contains("[B]") && !line.contains("[M]"), "Cancellation occupies a separate choice row");
+                }
+            }
+            output.reset();
+            ui.showStockUpdateOptions(new Game("P001", "Draft", "PS5", 5, 3));
+            ui.inputBar("ENTER CHOICE");
+            ui.showRegistrationStep(2, false, "Juan Cruz", "", "");
+            text = output.toString("UTF-8").replaceAll("\u001B\\[[0-9;]*[mHJ]", "");
+            for (String line : text.split("\\R")) {
+                if (line.contains("[C]")) {
+                    check(!line.contains("[B]") && !line.contains("[M]"), "Stock and registration keep cancellation apart from navigation");
+                }
+            }
+        } finally {
+            System.setOut(previous);
+        }
+    }
+
+    static void completedResultTests() throws Exception {
+        PrintStream previous = System.out;
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(output, true, "UTF-8"));
+        try {
+            GameRentalSystem system = freshSystem("result-order");
+            system.gameCatalog.loadStartingGames();
+            User customer = client("resultclient", "REGULAR");
+            system.users.add(customer);
+            ScriptedUI ui = script(system, new String[] {"2", "1", "1", "N", "1", "1", "B", "bad", "m"});
+            ui.readResultNavigation = true;
+            system.placeInQueue(customer);
+            check(ui.nextChoice == 9 && ui.resultDestinations.contains(":Dashboard"), "Order Submitted waits for M Dashboard");
+            check(ui.errors.size() == 2 && system.checkoutQueue.getRequests().size() == 1
+                    && system.games.get("P001").availableCopies == 2, "Invalid result keys leave submitted requests and stock unchanged");
+            String text = output.toString("UTF-8");
+            int result = text.indexOf("ORDER SUBMITTED");
+            check(result >= 0 && text.indexOf("[M] Dashboard", result) > result,
+                    "Order result is followed by boxed M navigation");
+            check(text.indexOf("ORDER SUBMITTED", result + 1) < 0, "Invalid result input never redraws the result");
+
+            output.reset();
+            ui = script(system, new String[] {"C", "1", "Y", "bad", "M"});
+            ui.readResultNavigation = true;
+            system.cancelMyRequest(customer);
+            check(ui.nextChoice == 5 && ui.resultDestinations.contains(":Dashboard") && system.checkoutQueue.isEmpty(),
+                    "Last request cancellation waits for M without repeating the cancellation");
+            output.reset();
+            ui = script(system, new String[] {"1", "B", "M"});
+            ui.readResultNavigation = true;
+            system.upgradeToVip(customer);
+            check(ui.nextChoice == 3 && customer.isVip() && ui.errors.size() == 1
+                    && ui.resultDestinations.contains(":Dashboard"), "VIP result stays visible and accepts only M");
+
+            output.reset();
+            system = sessionSystem("result-checkout");
+            ui = script(system, new String[] {"", "Y", "B", "bad", "M"});
+            ui.readResultNavigation = true;
+            system.checkoutManagement();
+            check(ui.nextChoice == 5 && ui.receipts == 1 && ui.queueScreens == 1 && system.allRentals.size() == 1,
+                    "Checkout exit receipt waits without redrawing the queue or processing another rental");
+            check(ui.resultDestinations.contains(":Dashboard"), "Exit receipt labels the destination M Dashboard");
+
+            system = sessionSystem("result-checkout-dashboard");
+            ui = script(system, new String[] {"", "Y", "M", "M"});
+            ui.readResultNavigation = true;
+            system.checkoutManagement();
+            check(ui.nextChoice == 4 && ui.receipts == 1 && system.isDashboardReturnRequested(),
+                    "M from Checkout also leaves the exit receipt visible until M is entered there");
+            system = sessionSystem("result-checkout-cancel-dashboard");
+            ui = script(system, new String[] {"", "Y", "C", "M", "M"});
+            ui.readResultNavigation = true;
+            system.checkoutManagement();
+            check(ui.nextChoice == 5 && ui.receipts == 1 && system.allRentals.size() == 1,
+                    "Dashboard from cancellation shows the exit receipt without losing the session");
+
+            output.reset();
+            system = returnSystem("result-returns", 2);
+            ui = script(system, new String[] {"1", "Y", "bad", "B", "1", "Y", "B", "M"});
+            ui.readResultNavigation = true;
+            system.processReturn();
+            check(ui.nextChoice == 8 && ui.resultDestinations.get(0).equals("Return List:Dashboard")
+                    && ui.resultDestinations.get(1).equals(":Dashboard"), "Return result offers B Return List only while rentals remain");
+            check(system.activeRentals.isEmpty() && system.allRentals.size() == 2 && ui.errors.size() == 2,
+                    "Return result retries preserve completed rentals and do not return items twice");
+
+            output.reset();
+            system = freshSystem("result-registration");
+            AccountUI accountUI = new AccountUI(new String[] {"Juan Cruz", "resultuser", "result@example.com", "12345678", "12345678", "1", "B", "M"});
+            accountUI.readResultNavigation = true;
+            accountScript(system, accountUI).register();
+            check(accountUI.nextChoice == 8 && accountUI.resultDestinations.contains(":Main Menu")
+                    && system.users.size() == 1, "Account Created waits for M Main Menu and creates only one account");
+            check(output.toString("UTF-8").contains("[M] Main Menu"), "Registration result displays its actual main destination");
+        } finally {
+            System.setOut(previous);
+        }
+    }
+
+    static void receiptNavigationTests() {
+        GameRentalSystem system = freshSystem("empty-receipt-navigation");
+        ScriptedUI ui = script(system, new String[] {"R", "bad", "B", "B"});
+        system.checkoutManagement();
+        check(ui.screensAtInput.get(1).equals("1:1") && ui.screensAtInput.get(2).equals("1:1"),
+                "Receipt remains visible while waiting for navigation and through invalid input");
+        check(ui.screensAtInput.get(3).equals("1:2") && ui.receipts == 1 && ui.queueScreens == 2,
+                "Back redraws Checkout only after leaving the receipt");
+        check(ui.errors.size() == 1 && system.checkoutQueue.isEmpty() && system.allRentals.isEmpty(),
+                "Empty receipt and invalid navigation do not change rental state");
+
+        system = sessionSystem("populated-receipt-navigation");
+        int waitingBefore = system.checkoutQueue.getRequests().size();
+        ui = script(system, new String[] {"", "Y", "R", "bad", "M"});
+        system.checkoutManagement();
+        check(ui.screensAtInput.get(3).equals("1:1") && ui.screensAtInput.get(4).equals("1:1"),
+                "Populated receipt remains visible without a queue redraw");
+        check(ui.receipts == 1 && ui.queueScreens == 1 && system.isDashboardReturnRequested(),
+                "Dashboard exits the receipt directly without redrawing Checkout or another receipt");
+        check(system.allRentals.size() == 1 && system.checkoutQueue.getRequests().size() == waitingBefore - 1
+                && ui.lastApproved == 1 && ui.lastCancelled == 0,
+                "Receipt navigation preserves approved rentals, remaining requests and session counters");
+    }
+
     static void checkoutSessionTests() throws Exception {
         GameRentalSystem system = sessionSystem("batch-session");
         ArrayList<RentalRequest> before = system.checkoutQueue.getRequests();
@@ -836,7 +1734,7 @@ public class BehaviorRegressionTest {
             "Preview changes neither live stock nor streak");
         check(system.checkoutQueue.getRequests().equals(before) && system.nextRentalNumber == 1,
             "Preview changes neither queue nor rental numbers");
-        ScriptedUI ui = script(system, new String[] {"A", "Y", "X", "6", "Y", "0"});
+        ScriptedUI ui = script(system, new String[] {"A", "Y", "C", "6", "Y", "0"});
         system.checkoutManagement("actualadmin");
         check(ui.batchNumbers.size() == 5 && ui.tapeRentals.size() == 5,
             "One tape line per batch approval. Slips: " + ui.tapeRentals.size() + "; errors: " + ui.errors);
@@ -860,7 +1758,7 @@ public class BehaviorRegressionTest {
 
         system = sessionSystem("enter-session");
         RentalRequest next = system.checkoutQueue.findNextEligibleRequest();
-        ui = script(system, new String[] {"", "Y", "", "Y", "X", "6", "Y", "R", "Q", "M"});
+        ui = script(system, new String[] {"", "Y", "", "Y", "C", "6", "Y", "R", "B", "V", "M"});
         system.checkoutManagement("actualadmin");
         check(system.allRentals.get(0).game == next.game, "ENTER approves the NEXT request");
         check(ui.lastApproved == 2 && ui.lastCancelled == 1 && ui.lastTotal == 9,
@@ -873,15 +1771,15 @@ public class BehaviorRegressionTest {
         ui = script(system, new String[] {"bogus", "", "A", "0"});
         system.checkoutManagement();
         check(ui.receipts == 0 && ui.finishes == 0 && ui.clears == 1, "Empty session exits directly");
-        check(ui.errors.contains("Use ENTER, A, X, Q, R, 0 or M.") && system.nextRentalNumber == 1,
+        check(ui.errors.contains("Use ENTER, A, C, V, R, B or M.") && system.nextRentalNumber == 1,
             "Invalid keys change nothing");
         ui = script(system, new String[] {"M"});
         system.checkoutManagement();
         check(ui.receipts == 0 && system.isDashboardReturnRequested(), "Empty M returns directly");
 
         system = sessionSystem("declined-session");
-        ui = script(system, new String[] {"", "N", "A", "N", "X", "0", "X", "abc", "X", "999",
-            "X", "6", "N", "0"});
+        ui = script(system, new String[] {"", "N", "A", "N", "C", "0", "C", "abc", "C", "999",
+            "C", "6", "N", "0"});
         system.checkoutManagement();
         check(system.allRentals.isEmpty() && system.checkoutQueue.getRequests().size() == 7,
             "Declined actions and invalid cancellations preserve state");
@@ -984,7 +1882,7 @@ public class BehaviorRegressionTest {
                 check(line.substring(72, 79).startsWith("VIP "), "Session VIP indicator is right-aligned");
             }
         }
-        check(plain.contains("WAIT short 1") && plain.contains("READY"), "Rendered status labels");
+        check(plain.contains("WAITING") && plain.contains("READY"), "Rendered predicted status labels");
         check(plain.contains("✔") && plain.contains("✘") && plain.contains("TOTAL $5.00"), "Tape and receipt render totals");
         check(!plain.contains("◀ NEXT") && !plain.contains("▶"), "Rows have no NEXT marker");
         check(plain.contains("✔ APPROVED  #01") && plain.contains("✘ CANCELLED  #02"),
@@ -992,8 +1890,9 @@ public class BehaviorRegressionTest {
         check(plain.contains("Out ") && plain.contains("Due ") && plain.contains("3 days"),
             "Approved slip includes duration and dates");
         check(plain.contains("WARNING: No request is ready."), "Warning renders in a separate message card");
-        check(plain.contains("[ENTER] Approve  [A] All  [X] Cancel #  [Q] Queue  [R] Receipt  [0] Back"),
-            "Input panel contains the tape keys");
+        check(plain.contains("[ENTER] Approve      [A] All") && plain.contains("[C] Cancel #")
+                && plain.contains("[V] Queue      [R] Receipt") && plain.contains("[B] Dashboard"),
+            "Tape options are grouped with even spacing");
         check(!plain.contains("[M] Dashboard"), "M remains hidden from tape keys");
         if (!"true".equalsIgnoreCase(System.getProperty("q2p.ascii"))) {
             check(plain.contains("╓") && plain.contains("╖") && plain.contains("╟"), "Detail-card slip borders");
@@ -1044,7 +1943,7 @@ public class BehaviorRegressionTest {
         check(ui.clears == 1, "Retries never clear screen");
 
         system = sessionSystem("numbered-tape");
-        ui = script(system, new String[] {"", "Y", "X", "6", "Y", "", "Y", "0"});
+        ui = script(system, new String[] {"", "Y", "C", "6", "Y", "", "Y", "0"});
         system.checkoutManagement();
         String[] expectedEvents = {"input", "approved:1", "status", "input", "cancelled:2", "status", "input",
             "approved:3", "status", "input"};
@@ -1147,14 +2046,14 @@ public class BehaviorRegressionTest {
             && plain.contains("... x2 ?   [Y] Yes   [N] No"), "Only long game titles are shortened");
 
         system = sessionSystem("confirm-actions");
-        ui = script(system, new String[] {"", "bad", "YES", "X", "6", "bad", "yes", "0"});
+        ui = script(system, new String[] {"", "bad", "YES", "C", "6", "bad", "yes", "0"});
         system.checkoutManagement();
         check(ui.lastApproved == 1 && ui.lastCancelled == 1 && ui.slipNumbers.size() == 2,
             "Approval and cancellation still commit after invalid-answer retries");
         check(system.allRentals.size() == 1 && system.checkoutQueue.findByNumber(6) == null,
             "Confirmed actions still create rental and remove cancelled request");
         system = sessionSystem("confirm-aborts");
-        ui = script(system, new String[] {"", "bad", "n", "X", "6", "bad", "NO", "0"});
+        ui = script(system, new String[] {"", "bad", "n", "C", "6", "bad", "NO", "0"});
         system.checkoutManagement();
         check(system.allRentals.isEmpty() && system.checkoutQueue.getRequests().size() == 7
             && system.games.get("P001").availableCopies == 3 && system.checkoutQueue.vipStreak == 0,
@@ -1210,6 +2109,9 @@ public class BehaviorRegressionTest {
                 String[] lines = plain.split("\\R");
                 check(!lines[0].isEmpty(), "Screen has no leading vertical padding");
                 for (int i = 0; i < lines.length - 1; i++) {
+                    if (lines[i].isEmpty()) {
+                        continue;
+                    }
                     check(lines[i].startsWith(" ".repeat(margin)) && lines[i].length() == margin + screenWidth,
                         "Header and input panel share the centered screen margin");
                 }
@@ -1224,6 +2126,17 @@ public class BehaviorRegressionTest {
                 ui.showGoodbye();
                 check(drawing.toString("UTF-8").startsWith("\u001B[2J\u001B[H"),
                     "Closing screen also starts at terminal top");
+                drawing.reset();
+                ui.showCooldownRemaining(30);
+                ui.showCooldownRemaining(9);
+                ui.showCooldownRemaining(0);
+                plain = drawing.toString("UTF-8").replaceAll("\u001B\\[[0-9;]*m", "");
+                String[] frames = plain.split("\r");
+                check(frames.length == 4 && !plain.contains("\n"), "Countdown redraws stay on one line at every terminal width");
+                for (int i = 1; i < frames.length; i++) {
+                    check(frames[i].length() == margin + screenWidth && frames[i].length() <= terminalWidth,
+                            "Countdown fits the terminal and overwrites the previous frame completely");
+                }
             }
             System.setProperty("q2p.ansi", "false");
             ConsoleUI ui = new ConsoleUI();
@@ -1288,7 +2201,18 @@ public class BehaviorRegressionTest {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         System.setOut(new PrintStream(output, true, "UTF-8"));
         testRoot = Files.createTempDirectory("q2p-behavior-tests-");
+        if (args.length > 0 && args[0].equals("editing")) {
+            gameEditingTests();
+            categoryLayoutTests();
+            System.setOut(originalOutput);
+            System.out.println("PASS: " + checks + " editing/category checks. Isolated data: " + testRoot);
+            return;
+        }
         if (args.length > 0 && args[0].equals("layout")) {
+            choiceAndCooldownLayoutTests();
+            rentalPanelTests();
+            menuLayoutTests();
+            categoryLayoutTests();
             checkoutLayoutTests();
             terminalPositionTests();
             finishScreenTests();
@@ -1324,12 +2248,22 @@ public class BehaviorRegressionTest {
         repeatQueueTests();
         legacyQuantityTests();
         queueTests();
+        predictedQueueTests();
+        returnTests();
         checkoutSessionTests();
+        receiptNavigationTests();
+        completedResultTests();
+        gameEditingTests();
+        categoryLayoutTests();
         checkoutLayoutTests();
         tapeFlowTests();
         confirmQuestionTests();
         terminalPositionTests();
         finishScreenTests();
+        navigationFlowTests();
+        choiceAndCooldownLayoutTests();
+        rentalPanelTests();
+        menuLayoutTests();
         String terminal = output.toString("UTF-8");
         if (System.getenv("NO_COLOR") != null || "false".equals(System.getProperty("q2p.color"))) {
             check(!terminal.contains("\u001B[1;94m"), "NO_COLOR disables platform colors");

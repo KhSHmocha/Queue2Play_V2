@@ -237,7 +237,7 @@ class AccountService {
             } else {
                 value = ui.readText(ui.prompt()).trim();
             }
-            if (step == 1 && !editing && value.equals("0")) {
+            if (step == 1 && !editing && (value.equalsIgnoreCase("B") || value.equals("0"))) {
                 return;
             }
             if ((step > 1 || editing) && value.equalsIgnoreCase("C")) {
@@ -313,11 +313,13 @@ class AccountService {
         ui.clearScreen();
         ui.showAccountCreated();
         ui.finishScreen();
+        ui.waitForResultNavigation("", "Main Menu");
     }
 
     private void failedLogin(String login) {
         failedLoginAttempts++;
         ui.error("Incorrect username/email or password.");
+        ui.showLoginAttempt((failedLoginAttempts - 1) % 3 + 1);
         if (failedLoginAttempts % 3 == 0) {
             ui.showLoginCooldown();
         }
@@ -331,7 +333,7 @@ class AccountService {
             ui.clearScreen();
             ui.showLoginUsernameScreen();
             String login = ui.readText(ui.prompt()).trim();
-            if (login.equals("0")) {
+            if (login.equalsIgnoreCase("B") || login.equals("0")) {
                 return null;
             }
             if (login.isEmpty()) {
@@ -344,7 +346,7 @@ class AccountService {
                 // Show the supplied identifier for every account, including unknown ones.
                 ui.showLoginPasswordScreen(login);
                 String password = ui.readPassword(ui.prompt());
-                if (password.equals("0")) {
+                if (password.equalsIgnoreCase("C") || password.equals("0")) {
                     return null;
                 }
                 if (password.equalsIgnoreCase("B")) {

@@ -1,6 +1,6 @@
-#COUNTERS|18|2
+#COUNTERS|30|0
 # QUEUE #|USERNAME|GAME ID|VIP|RENTAL DAYS|QUANTITY
+27|DLT|P001|true|1|1
+28|DLT|P002|true|1|1
+29|DLT|X003|true|1|1
 2|juan|P002|false|1|5
-15|juan|P001|false|1|1
-16|juan|P001|false|3|2
-17|juan|P001|false|7|2

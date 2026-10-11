@@ -4,3 +4,4 @@ alex|Alex R. Reyes|alex@email.com|pbkdf2$210000$/HsG+nGbQvDP5pG+4pCTzg==$oT48kda
 juan|Juan D. Cruz|juan@email.com|pbkdf2$210000$Ftn5LRnLNIEWOjptWVwAXA==$F0gxOmf7Lpn5mgxJKnlFiPRNT6xShhKshE18akZq9sg=|CLIENT|REGULAR
 OnezPH|Onez P. H|Onez@gmail.com|pbkdf2$210000$VDHChtuTU/drUZCKaMcYag==$h4IJYBKypEc6kZZmMj3963E3mhZXeZiutO/b/Fqac4w=|CLIENT|REGULAR
 gerbs|Gerbie A. Hernandez|gerbie@gmail.com|pbkdf2$210000$0vlg8qj5Yxr4LV3UfY2RNA==$NpbRvbTRHQmqmgkv1N4VYBCJc4FqmLvaNhRig2smKFs=|CLIENT|REGULAR
+DLT|Drix Lang Toh|dlt@gmail.com|pbkdf2$210000$MoJ1kF3h0zY6vlBMVTyKzA==$vHyE5kPqWmwiN5N6hr9pGfc6Y4FkQhIAaVfCi0vRQC4=|CLIENT|VIP
