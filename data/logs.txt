@@ -199,3 +199,29 @@
 2026-10-11 18:44:13|EVENT|Login: admin (ADMIN)
 2026-10-11 18:44:23|ADMIN|Processed checkout: gerbs - Spider-Man 2 x1
 2026-10-11 18:47:08|EVENT|Login: admin (ADMIN)
+2026-10-11 19:41:52|EVENT|Failed login attempt for account: juan
+2026-10-11 19:42:01|EVENT|Login: juan (CLIENT)
+2026-10-11 19:42:38|EVENT|Queue request #032: juan - Minecraft x1 (1 day(s))
+2026-10-11 19:43:06|EVENT|Queue request #033: juan - Minecraft x1 (1 day(s))
+2026-10-11 19:44:03|EVENT|Queue request #034: juan - Minecraft x1 (3 day(s))
+2026-10-11 19:44:03|EVENT|Queue request #035: juan - Halo Infinite x1 (3 day(s))
+2026-10-11 19:44:03|EVENT|Queue request #036: juan - Forza Horizon 5 x1 (3 day(s))
+2026-10-11 19:44:03|EVENT|Queue request #037: juan - Animal Crossing x1 (3 day(s))
+2026-10-11 19:44:03|EVENT|Queue request #038: juan - Minecraft x1 (3 day(s))
+2026-10-11 19:44:03|EVENT|Queue request #039: juan - Mario Kart 8 x1 (3 day(s))
+2026-10-11 19:44:29|EVENT|Login: admin (ADMIN)
+2026-10-11 19:44:52|ADMIN|Processed checkout: juan - Minecraft x1
+2026-10-11 19:45:03|ADMIN|Processed checkout: juan - Minecraft x1
+2026-10-11 19:45:04|ADMIN|Processed checkout: juan - Minecraft x1
+2026-10-11 19:45:04|ADMIN|Processed checkout: juan - Halo Infinite x1
+2026-10-11 19:45:04|ADMIN|Processed checkout: juan - Forza Horizon 5 x1
+2026-10-11 19:45:04|ADMIN|Processed checkout: juan - Animal Crossing x1
+2026-10-11 19:45:04|ADMIN|Processed checkout: juan - Minecraft x1
+2026-10-11 19:45:04|ADMIN|Processed checkout: juan - Mario Kart 8 x1
+2026-10-11 19:53:47|EVENT|Login: gerbs (CLIENT)
+2026-10-11 19:54:07|EVENT|Queue request #040: gerbs - Forza Horizon 5 x1 (1 day(s))
+2026-10-11 19:54:07|EVENT|Queue request #041: gerbs - Zelda: Tears of the Kingdom x1 (1 day(s))
+2026-10-11 19:54:21|EVENT|Login: admin (ADMIN)
+2026-10-11 19:54:31|ADMIN|Processed checkout: gerbs - Forza Horizon 5 x1
+2026-10-11 20:11:01|EVENT|Login: admin (ADMIN)
+2026-10-11 20:31:25|EVENT|Login: admin (ADMIN)

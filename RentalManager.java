@@ -4,13 +4,13 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.PriorityQueue;
 
-class RentalService {
+class RentalManager {
     private final CheckoutQueue checkoutQueue;
     private final PriorityQueue<Rental> activeRentals;
     private final ArrayList<Rental> allRentals;
     private final Map<String, Game> catalog;
 
-    RentalService(CheckoutQueue checkoutQueue, PriorityQueue<Rental> activeRentals,
+    RentalManager(CheckoutQueue checkoutQueue, PriorityQueue<Rental> activeRentals,
         ArrayList<Rental> allRentals, Map<String, Game> catalog) {
         this.checkoutQueue = checkoutQueue;
         this.activeRentals = activeRentals;
@@ -44,28 +44,28 @@ class RentalService {
         } else {
             result -= quantity;
         }
-        RentalDataStore.require(result >= 0 && result + rentedCopies(game) <= GameRentalSystem.MAX_GAME_STOCK,
-            "Available plus rented copies must stay between zero and " + GameRentalSystem.MAX_GAME_STOCK);
+        RentalDataStore.require(result >= 0 && result + rentedCopies(game) <= Queue2Play.MAX_GAME_STOCK,
+            "Available plus rented copies must stay between zero and " + Queue2Play.MAX_GAME_STOCK);
         return (int) result;
     }
 
     double calculateRentalCost(User client, Game game) {
         RentalDataStore.require(client != null && game != null, "Client and game are required");
-        GameCatalogService.validate(game.title, game.platform, game.price, game.availableCopies);
+        GameCatalog.validate(game.title, game.platform, game.price, game.availableCopies);
         if (client.isVip()) {
-            return game.price * (1 - GameRentalSystem.VIP_DISCOUNT);
+            return game.price * (1 - Queue2Play.VIP_DISCOUNT);
         }
         return game.price;
     }
 
     double calculateRentalCost(User client, Game game, int days) {
-        RentalDataStore.require(days >= 1 && days <= GameRentalSystem.MAX_RENTAL_DAYS, "Invalid rental duration");
-        double price = calculateRentalCost(client, game) * days / GameRentalSystem.RENTAL_DAYS;
+        RentalDataStore.require(days >= 1 && days <= Queue2Play.MAX_RENTAL_DAYS, "Invalid rental duration");
+        double price = calculateRentalCost(client, game) * days / Queue2Play.RENTAL_DAYS;
         return Math.round(price * 100) / 100.0;
     }
 
     double calculateRentalCost(User client, Game game, int days, int quantity) {
-        RentalDataStore.require(quantity >= 1 && quantity <= GameRentalSystem.MAX_SAVED_COPIES_PER_GAME, "Invalid quantity");
+        RentalDataStore.require(quantity >= 1 && quantity <= Queue2Play.MAX_SAVED_COPIES_PER_GAME, "Invalid quantity");
         return Math.round(calculateRentalCost(client, game, days) * quantity * 100) / 100.0;
     }
 
@@ -116,12 +116,12 @@ class RentalService {
         if (catalog.get(request.game.gameId) != request.game) {
             return "This game is no longer in the catalog.";
         }
-        if (activeCopies(request.client, request.game) > GameRentalSystem.MAX_SAVED_COPIES_PER_GAME - request.quantity) {
-            return "This checkout would exceed " + GameRentalSystem.MAX_SAVED_COPIES_PER_GAME
+        if (activeCopies(request.client, request.game) > Queue2Play.MAX_SAVED_COPIES_PER_GAME - request.quantity) {
+            return "This checkout would exceed " + Queue2Play.MAX_SAVED_COPIES_PER_GAME
                 + " active copies of this game for the client.";
         }
-        if (!Double.isFinite(request.game.price) || request.game.price < GameRentalSystem.MIN_RENTAL_PRICE
-            || request.game.price > GameRentalSystem.MAX_RENTAL_PRICE) {
+        if (!Double.isFinite(request.game.price) || request.game.price < Queue2Play.MIN_RENTAL_PRICE
+            || request.game.price > Queue2Play.MAX_RENTAL_PRICE) {
             return "Invalid game price.";
         }
         if (request.game.availableCopies < request.quantity) {
@@ -160,7 +160,7 @@ class RentalService {
 
     double calculateLateFee(Rental rental, int daysLate) {
         RentalDataStore.require(daysLate >= 0, "Days late cannot be negative");
-        return daysLate * GameRentalSystem.LATE_FEE_PER_DAY * rental.quantity;
+        return daysLate * Queue2Play.LATE_FEE_PER_DAY * rental.quantity;
     }
 
     static int daysOverdue(LocalDateTime due, LocalDateTime now) {
@@ -182,7 +182,7 @@ class RentalService {
             throw new IllegalArgumentException("This rental is no longer active.");
         }
         int restored = Math.addExact(rental.game.availableCopies, rental.quantity);
-        RentalDataStore.require(restored <= GameRentalSystem.MAX_GAME_STOCK, "Return would exceed total stock; correct inventory first");
+        RentalDataStore.require(restored <= Queue2Play.MAX_GAME_STOCK, "Return would exceed total stock; correct inventory first");
         rental.returnDate = returnedAt;
         rental.daysLate = daysOverdue(rental.dueDate, returnedAt);
         rental.lateFee = calculateLateFee(rental, rental.daysLate);
@@ -203,11 +203,11 @@ class RentalService {
                 return "This game is no longer in the catalog.";
             }
             int quantity = cart.get(game);
-            if (quantity < 1 || quantity > GameRentalSystem.MAX_COPIES_PER_GAME) {
-                return "Invalid quantity for " + game.title + ". Maximum is " + GameRentalSystem.MAX_COPIES_PER_GAME + ".";
+            if (quantity < 1 || quantity > Queue2Play.MAX_COPIES_PER_GAME) {
+                return "Invalid quantity for " + game.title + ". Maximum is " + Queue2Play.MAX_COPIES_PER_GAME + ".";
             }
-            if (checkoutQueue.queuedCopies(client, game) > GameRentalSystem.MAX_COPIES_PER_GAME - quantity) {
-                return "Maximum queued quantity is " + GameRentalSystem.MAX_COPIES_PER_GAME
+            if (checkoutQueue.queuedCopies(client, game) > Queue2Play.MAX_COPIES_PER_GAME - quantity) {
+                return "Maximum queued quantity is " + Queue2Play.MAX_COPIES_PER_GAME
                     + " copies for " + game.title + ", including this cart.";
             }
             if (hasActiveRental(client, game)) {

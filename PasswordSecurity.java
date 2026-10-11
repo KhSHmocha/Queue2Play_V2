@@ -4,7 +4,7 @@ import java.util.Base64;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 
-final class Passwords {
+final class PasswordSecurity {
     private static final int ITERATIONS = 210000;
     private static final SecureRandom RANDOM = new SecureRandom();
 

@@ -6,7 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.PriorityQueue;
 import java.util.Stack;
 
-public class GameRentalSystem {
+public class Queue2Play {
 
     // ---------- Settings ----------
     static final int RENTAL_DAYS = 3;
@@ -32,11 +32,11 @@ public class GameRentalSystem {
     static final int LOG_PAGE_SIZE = 9;
 
     // ---------- Data structures ----------
-    ConsoleUI ui = new ConsoleUI();
-    final AccountService accountService;
+    TerminalUI ui = new TerminalUI();
+    final AccountManager accountService;
     final RentalDataStore dataStore;
-    final GameCatalogService gameCatalog;
-    final RentalService rentalService;
+    final GameCatalog gameCatalog;
+    final RentalManager rentalService;
 
     // Hash table maps game IDs to games; LinkedHashMap keeps inventory display order.
     LinkedHashMap<String, Game> games = new LinkedHashMap<>();
@@ -112,11 +112,11 @@ public class GameRentalSystem {
         }
     }
 
-    GameRentalSystem() {
+    Queue2Play() {
         dataStore = new RentalDataStore(this);
-        accountService = new AccountService(users, ui, dataStore);
-        gameCatalog = new GameCatalogService(games);
-        rentalService = new RentalService(checkoutQueue, activeRentals, allRentals, games);
+        accountService = new AccountManager(users, ui, dataStore);
+        gameCatalog = new GameCatalog(games);
+        rentalService = new RentalManager(checkoutQueue, activeRentals, allRentals, games);
     }
 
     void requestDashboardReturn() {
@@ -222,7 +222,7 @@ public class GameRentalSystem {
             if (client != null) {
                 heading = "CLIENT > RENT GAMES > " + selectedRentalPlatform;
             }
-            ui.printHeader(heading, ConsoleUI.GAME_TABLE_WIDTH);
+            ui.printHeader(heading, TerminalUI.GAME_TABLE_WIDTH);
             if (client != null) {
                 ui.showCatalogState(keyword, sortOption, page + 1, totalPages, cart);
             } else {
@@ -235,11 +235,11 @@ public class GameRentalSystem {
                 for (int i = start; i < end; i++) {
                     ui.showGameRow(i - start + 1, list.get(i));
                 }
-                ui.info(ui.tableLine(ConsoleUI.GAME_TABLE_WIDTH));
+                ui.info(ui.tableLine(TerminalUI.GAME_TABLE_WIDTH));
             }
             ui.showGameNavigation(page, totalPages, keyword, selectable, cart != null && !cart.isEmpty(), end - start);
-            ui.inputBar("ENTER CHOICE", ConsoleUI.GAME_TABLE_WIDTH);
-            String choice = ui.readText(ui.prompt(ConsoleUI.GAME_TABLE_WIDTH));
+            ui.inputBar("ENTER CHOICE", TerminalUI.GAME_TABLE_WIDTH);
+            String choice = ui.readText(ui.prompt(TerminalUI.GAME_TABLE_WIDTH));
 
             if (choice.equalsIgnoreCase("M")) {
                 if (client != null && !confirmRentalDashboard(cart)) {
@@ -276,9 +276,9 @@ public class GameRentalSystem {
                     dashboard = "[M] Discard Cart / Dashboard";
                 }
                 while (true) {
-                    ui.showNavigationOptions(ConsoleUI.GAME_TABLE_WIDTH, new String[] {"[B] Game List", dashboard});
-                    ui.inputBar("SEARCH GAME", ConsoleUI.GAME_TABLE_WIDTH);
-                    String searchText = ui.readText(ui.prompt(ConsoleUI.GAME_TABLE_WIDTH));
+                    ui.showNavigationOptions(TerminalUI.GAME_TABLE_WIDTH, new String[] {"[B] Game List", dashboard});
+                    ui.inputBar("SEARCH GAME", TerminalUI.GAME_TABLE_WIDTH);
+                    String searchText = ui.readText(ui.prompt(TerminalUI.GAME_TABLE_WIDTH));
                     if (searchText.equalsIgnoreCase("M")) {
                         if (client != null && !confirmRentalDashboard(cart)) {
                             continue;
@@ -715,23 +715,23 @@ public class GameRentalSystem {
     // "Continue game selection": the order stays in the cart and can be changed.
     // Back returns to the order summary even if editing emptied the cart.
     int editOrder(User client, LinkedHashMap<Game, Integer> cart, int days) {
+        int page = 0;
         while (true) {
-            ui.printHeader("EDIT ORDER", ConsoleUI.EDIT_ORDER_TABLE_WIDTH);
-            int line = 1;
-            if (cart.isEmpty()) {
-                ui.showEmptyState("(Your cart is empty)");
-            } else {
-                ui.showEditOrderTableHeader();
-                for (Game game : cart.keySet()) {
-                    ui.showCartRow(cart.get(game), line, game);
-                    line++;
-                }
-                ui.info(ui.tableLine(ConsoleUI.EDIT_ORDER_TABLE_WIDTH));
-            }
-            ui.showEditOrderOptions(days);
-            ui.inputBar("ENTER CHOICE", ConsoleUI.EDIT_ORDER_TABLE_WIDTH);
+            ArrayList<Integer> starts = ui.cartPages(client, cart, days, rentalService, true);
+            int pages = starts.size() - 1;
+            page = Math.min(page, pages - 1);
+            ui.showCartPage(client, cart, days, rentalService, true, page, starts);
+            ui.showCartActions(true, page, pages);
 
-            String input = ui.readText(ui.prompt(ConsoleUI.EDIT_ORDER_TABLE_WIDTH));
+            String input = ui.readText(ui.prompt(TerminalUI.EDIT_ORDER_TABLE_WIDTH));
+            if (input.equalsIgnoreCase("N") && page < pages - 1) {
+                page++;
+                continue;
+            }
+            if (input.equalsIgnoreCase("P") && page > 0) {
+                page--;
+                continue;
+            }
             if (input.equalsIgnoreCase("C")) {
                 if (ui.askYesNo("Cancel this rental transaction and discard the cart?")) {
                     return NAV_CANCEL;
@@ -761,9 +761,9 @@ public class GameRentalSystem {
                     return status;
                 }
             } else if (choice == 2) {
-                ui.showNavigationOptions(ConsoleUI.EDIT_ORDER_TABLE_WIDTH, new String[] {"[B] Edit Order", "[M] Discard Cart / Dashboard"});
-                ui.inputBar("LINE NUMBER", ConsoleUI.EDIT_ORDER_TABLE_WIDTH);
-                String removeInput = ui.readText(ui.prompt(ConsoleUI.EDIT_ORDER_TABLE_WIDTH));
+                ui.showNavigationOptions(TerminalUI.EDIT_ORDER_TABLE_WIDTH, new String[] {"[B] Edit Order", "[M] Discard Cart / Dashboard"});
+                ui.inputBar("LINE NUMBER", TerminalUI.EDIT_ORDER_TABLE_WIDTH);
+                String removeInput = ui.readText(ui.prompt(TerminalUI.EDIT_ORDER_TABLE_WIDTH));
                 while (removeInput.equalsIgnoreCase("C") || removeInput.equalsIgnoreCase("M")) {
                     if (removeInput.equalsIgnoreCase("C")) {
                         if (ui.askYesNo("Cancel this rental transaction and discard the cart?")) {
@@ -775,10 +775,10 @@ public class GameRentalSystem {
                             return NAV_MAIN_MENU;
                         }
                     }
-                    ui.showNavigationOptions(ConsoleUI.EDIT_ORDER_TABLE_WIDTH,
+                    ui.showNavigationOptions(TerminalUI.EDIT_ORDER_TABLE_WIDTH,
                         new String[] {"[B] Edit Order", "[M] Discard Cart / Dashboard"});
-                    ui.inputBar("LINE NUMBER", ConsoleUI.EDIT_ORDER_TABLE_WIDTH);
-                    removeInput = ui.readText(ui.prompt(ConsoleUI.EDIT_ORDER_TABLE_WIDTH));
+                    ui.inputBar("LINE NUMBER", TerminalUI.EDIT_ORDER_TABLE_WIDTH);
+                    removeInput = ui.readText(ui.prompt(TerminalUI.EDIT_ORDER_TABLE_WIDTH));
                 }
                 try {
                     int number = parseMenuChoice(removeInput);
@@ -823,6 +823,7 @@ public class GameRentalSystem {
         LinkedHashMap<Game, Integer> cart = new LinkedHashMap<>();
         int step = 1;
         int days = RENTAL_DAYS;
+        int page = 0;
         while (true) {
             if (step == 1) {
                 rentalSelectionDestination = "Dashboard";
@@ -850,12 +851,18 @@ public class GameRentalSystem {
                 days = selectedDays;
                 step = 3;
             }
-            showOrderSummary(client, cart, days);
-            ui.showOrderConfirmationOptions();
-            ui.inputBar("ENTER CHOICE", ConsoleUI.ORDER_TABLE_WIDTH);
-            String choice = ui.readText(ui.prompt(ConsoleUI.ORDER_TABLE_WIDTH));
+            ArrayList<Integer> starts = ui.cartPages(client, cart, days, rentalService, false);
+            int pages = starts.size() - 1;
+            page = Math.min(page, pages - 1);
+            ui.showCartPage(client, cart, days, rentalService, false, page, starts);
+            ui.showCartActions(false, page, pages);
+            String choice = ui.readText(ui.prompt(TerminalUI.ORDER_TABLE_WIDTH));
 
-            if ((choice.equalsIgnoreCase("B") || choice.equals("0"))) {
+            if (choice.equalsIgnoreCase("N") && page < pages - 1) {
+                page++;
+            } else if (choice.equalsIgnoreCase("P") && page > 0) {
+                page--;
+            } else if ((choice.equalsIgnoreCase("B") || choice.equals("0"))) {
                 step = 2;
             } else if (choice.equals("1")) {
                 if (!validateCartBeforeSubmission(client, cart)) {
@@ -903,7 +910,7 @@ public class GameRentalSystem {
                 + client.username + " - " + request.game.title + " x" + request.quantity + " (" + days + " day(s))");
         }
         dataStore.saveQueue();
-        ui.printHeader("CLIENT > RENT GAMES", "ORDER SUBMITTED", ConsoleUI.QUEUE_TABLE_WIDTH);
+        ui.printHeader("CLIENT > RENT GAMES", "ORDER SUBMITTED", TerminalUI.QUEUE_TABLE_WIDTH);
         ui.success("Requests saved. Stock will be checked at checkout.");
         ui.showSubmittedQueueHeader();
         ArrayList<RentalRequest> ready = checkoutQueue.previewReadyRequests();
@@ -912,7 +919,7 @@ public class GameRentalSystem {
                 ui.showQueueRequestRow(ready.indexOf(r) + 1, r);
             }
         }
-        ui.info(ui.tableLine(ConsoleUI.QUEUE_TABLE_WIDTH));
+        ui.info(ui.tableLine(TerminalUI.QUEUE_TABLE_WIDTH));
         ui.finishScreen();
         ui.waitForResultNavigation("", "Dashboard");
     }
@@ -928,7 +935,7 @@ public class GameRentalSystem {
                 return;
             }
 
-            ui.printHeader("CLIENT > QUEUE REQUESTS", "MY QUEUE REQUESTS", ConsoleUI.QUEUE_TABLE_WIDTH);
+            ui.printHeader("CLIENT > QUEUE REQUESTS", "MY QUEUE REQUESTS", TerminalUI.QUEUE_TABLE_WIDTH);
             ArrayList<RentalRequest> ready = checkoutQueue.previewReadyRequests();
             ArrayList<RentalRequest> displayed = new ArrayList<>();
             for (RentalRequest request : checkoutQueue.getDisplayRequests(ready)) {
@@ -942,18 +949,18 @@ public class GameRentalSystem {
             int start = starts.get(page);
             int end = starts.get(page + 1);
             ui.showListStatus("Processing positions · Page: " + (page + 1) + "/" + pages,
-                "Showing " + (start + 1) + "-" + end + " of " + displayed.size(), ConsoleUI.QUEUE_TABLE_WIDTH);
+                "Showing " + (start + 1) + "-" + end + " of " + displayed.size(), TerminalUI.QUEUE_TABLE_WIDTH);
             ui.showQueueRequestHeader();
             for (int i = start; i < end; i++) {
                 RentalRequest request = displayed.get(i);
                 ui.showQueueRequestRow(ready.indexOf(request) + 1, request);
             }
-            ui.info(ui.tableLine(ConsoleUI.QUEUE_TABLE_WIDTH));
+            ui.info(ui.tableLine(TerminalUI.QUEUE_TABLE_WIDTH));
             ui.showPagination(page, pages);
 
             if (!choosingRequest) {
                 ui.showQueueCancellationOptions();
-                String choice = ui.readText(ui.prompt(ConsoleUI.QUEUE_TABLE_WIDTH));
+                String choice = ui.readText(ui.prompt(TerminalUI.QUEUE_TABLE_WIDTH));
                 if (choice.equalsIgnoreCase("N") && page < pages - 1) {
                     page++;
                     continue;
@@ -977,9 +984,9 @@ public class GameRentalSystem {
                 continue;
             }
 
-            ui.showNavigationOptions(ConsoleUI.QUEUE_TABLE_WIDTH, new String[] {"[B] My Requests", "[M] Dashboard"});
-            ui.inputBar("QUEUE NUMBER TO CANCEL", ConsoleUI.QUEUE_TABLE_WIDTH);
-            String input = ui.readText(ui.prompt(ConsoleUI.QUEUE_TABLE_WIDTH));
+            ui.showNavigationOptions(TerminalUI.QUEUE_TABLE_WIDTH, new String[] {"[B] My Requests", "[M] Dashboard"});
+            ui.inputBar("QUEUE NUMBER TO CANCEL", TerminalUI.QUEUE_TABLE_WIDTH);
+            String input = ui.readText(ui.prompt(TerminalUI.QUEUE_TABLE_WIDTH));
             if (input.equalsIgnoreCase("N") && page < pages - 1) {
                 page++;
                 continue;
@@ -1023,7 +1030,7 @@ public class GameRentalSystem {
             ui.success("Queue request " + ui.queueLabel(number) + " has been cancelled.");
 
             if (checkoutQueue.getRequestsOf(client).isEmpty()) {
-                ui.finishScreen(ConsoleUI.QUEUE_TABLE_WIDTH);
+                ui.finishScreen(TerminalUI.QUEUE_TABLE_WIDTH);
                 ui.waitForResultNavigation("", "Dashboard");
                 return;
             }
@@ -1052,21 +1059,21 @@ public class GameRentalSystem {
         while (true) {
             int start = starts.get(page);
             int end = starts.get(page + 1);
-            ui.printHeader("RENTAL HISTORY (Most Recent First)", ConsoleUI.HISTORY_TABLE_WIDTH);
+            ui.printHeader("RENTAL HISTORY (Most Recent First)", TerminalUI.HISTORY_TABLE_WIDTH);
             ui.showListStatus("Most recent first · Page: " + (page + 1) + "/" + totalPages,
-                "Showing " + (start + 1) + "-" + end + " of " + history.size(), ConsoleUI.HISTORY_TABLE_WIDTH);
+                "Showing " + (start + 1) + "-" + end + " of " + history.size(), TerminalUI.HISTORY_TABLE_WIDTH);
             ui.showHistoryTableHeader(history.size(), start, end);
 
             for (int i = start; i < end; i++) {
                 Rental rental = history.get(i);
                 ui.showHistoryRow(rental);
             }
-            ui.info(ui.tableLine(ConsoleUI.HISTORY_TABLE_WIDTH));
+            ui.info(ui.tableLine(TerminalUI.HISTORY_TABLE_WIDTH));
 
             ui.showPagination(page, totalPages);
             ui.showBackToDashboard();
-            ui.inputBar("ENTER CHOICE", ConsoleUI.HISTORY_TABLE_WIDTH);
-            String choice = ui.readText(ui.prompt(ConsoleUI.HISTORY_TABLE_WIDTH));
+            ui.inputBar("ENTER CHOICE", TerminalUI.HISTORY_TABLE_WIDTH);
+            String choice = ui.readText(ui.prompt(TerminalUI.HISTORY_TABLE_WIDTH));
             if (choice.equalsIgnoreCase("N") && page < totalPages - 1) {
                 page++;
             }
@@ -1221,12 +1228,12 @@ public class GameRentalSystem {
     private void runCheckoutSession(CheckoutSession session) {
         ui.showCheckoutQueue(checkoutQueue, rentalService);
         while (true) {
-            String choice = ui.readText(ui.prompt(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH));
+            String choice = ui.readText(ui.prompt(TerminalUI.CHECKOUT_QUEUE_TABLE_WIDTH));
             if ((choice.equalsIgnoreCase("B") || choice.equals("0")) || choice.equalsIgnoreCase("M")) {
                 if (!session.entries.isEmpty()) {
                     ui.showCheckoutReceipt(session, checkoutQueue);
-                    ui.finishScreen(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH);
-                    ui.waitForResultNavigation("", "Dashboard");
+                    ui.finishScreen();
+                    ui.waitForReceiptNavigation(session, checkoutQueue, "");
                 }
                 if (choice.equalsIgnoreCase("M")) {
                     requestDashboardReturn();
@@ -1243,9 +1250,9 @@ public class GameRentalSystem {
             }
             if (choice.equalsIgnoreCase("R")) {
                 ui.showCheckoutReceipt(session, checkoutQueue);
-                ui.finishScreen(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH);
-                waitForScreenNavigation("Checkout", true);
-                if (isDashboardReturnRequested()) {
+                ui.finishScreen();
+                if (!ui.waitForReceiptNavigation(session, checkoutQueue, "Checkout")) {
+                    requestDashboardReturn();
                     return;
                 }
                 ui.showCheckoutQueue(checkoutQueue, rentalService);
@@ -1266,8 +1273,8 @@ public class GameRentalSystem {
                 if (isDashboardReturnRequested()) {
                     if (!session.entries.isEmpty()) {
                         ui.showCheckoutReceipt(session, checkoutQueue);
-                        ui.finishScreen(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH);
-                        ui.waitForResultNavigation("", "Dashboard");
+                        ui.finishScreen();
+                        ui.waitForReceiptNavigation(session, checkoutQueue, "");
                     }
                     return;
                 }
@@ -1293,7 +1300,7 @@ public class GameRentalSystem {
             return;
         }
         ui.showCheckoutBatch(planned, checkoutQueue, rentalService);
-        if (!ui.confirmCheckoutBatch(planned.size())) {
+        if (!ui.confirmCheckoutBatch(planned, checkoutQueue, rentalService)) {
             return;
         }
         for (RentalRequest request : planned) {
@@ -1328,8 +1335,8 @@ public class GameRentalSystem {
     }
 
     void cancelSessionRequest(CheckoutSession session) {
-        ui.inputBar("QUEUE NUMBER TO CANCEL", ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH, "[B] Checkout   [M] Dashboard");
-        String input = ui.readText(ui.prompt(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH));
+        ui.inputBar("QUEUE NUMBER TO CANCEL", TerminalUI.CHECKOUT_QUEUE_TABLE_WIDTH, "[B] Checkout   [M] Dashboard");
+        String input = ui.readText(ui.prompt(TerminalUI.CHECKOUT_QUEUE_TABLE_WIDTH));
         if (input.equalsIgnoreCase("M")) {
             requestDashboardReturn();
             return;
@@ -1428,7 +1435,7 @@ public class GameRentalSystem {
         String keyword = "";
         while (true) {
             if (activeRentals.isEmpty()) {
-                ui.printHeader("ADMIN > RETURNS", "ACTIVE RENTALS", ConsoleUI.RETURN_TABLE_WIDTH);
+                ui.printHeader("ADMIN > RETURNS", "ACTIVE RENTALS", TerminalUI.RETURN_TABLE_WIDTH);
                 ui.showEmptyState("No active rentals.");
                 waitForScreenNavigation("Dashboard", false);
                 return null;
@@ -1440,13 +1447,13 @@ public class GameRentalSystem {
             int start = starts.get(page);
             int end = starts.get(page + 1);
             ui.showReturnSelectionList(rentals, start, end, page, totalPages, keyword);
-            String choice = ui.readText(ui.prompt(ConsoleUI.RETURN_TABLE_WIDTH)).trim();
+            String choice = ui.readText(ui.prompt(TerminalUI.RETURN_TABLE_WIDTH)).trim();
             if ((choice.equalsIgnoreCase("B") || choice.equals("0"))) {
                 return null;
             }
             if (choice.equalsIgnoreCase("S")) {
                 ui.showReturnSearchPrompt();
-                String search = ui.readText(ui.prompt(ConsoleUI.RETURN_TABLE_WIDTH)).trim();
+                String search = ui.readText(ui.prompt(TerminalUI.RETURN_TABLE_WIDTH)).trim();
                 if (search.equalsIgnoreCase("M")) {
                     requestDashboardReturn();
                     return null;
@@ -1523,7 +1530,7 @@ public class GameRentalSystem {
             if (!activeRentals.isEmpty()) {
                 previousDestination = "Return List";
             }
-            if (!ui.waitForResultNavigation(previousDestination, "Dashboard")) {
+            if (!ui.waitForReturnResultNavigation(selected, previousDestination)) {
                 return;
             }
         }
@@ -1543,21 +1550,21 @@ public class GameRentalSystem {
         while (true) {
             int start = starts.get(page);
             int end = starts.get(page + 1);
-            ui.printHeader("ACTIVE RENTALS - Earliest Due Date First", ConsoleUI.ACTIVE_TABLE_WIDTH);
+            ui.printHeader("ACTIVE RENTALS - Earliest Due Date First", TerminalUI.ACTIVE_TABLE_WIDTH);
             ui.showListStatus("Earliest due date first · Page: " + (page + 1) + "/" + totalPages,
-                "Showing " + (start + 1) + "-" + end + " of " + rentals.size(), ConsoleUI.ACTIVE_TABLE_WIDTH);
+                "Showing " + (start + 1) + "-" + end + " of " + rentals.size(), TerminalUI.ACTIVE_TABLE_WIDTH);
             ui.showActiveRentalHeader(rentals.size(), start, end);
 
             for (int i = start; i < end; i++) {
                 Rental rental = rentals.get(i);
                 ui.showActiveRentalRow(rental);
             }
-            ui.info(ui.tableLine(ConsoleUI.ACTIVE_TABLE_WIDTH));
+            ui.info(ui.tableLine(TerminalUI.ACTIVE_TABLE_WIDTH));
 
             ui.showPagination(page, totalPages);
             ui.showNavigationOptions(new String[] {"[B] Active Rentals", "[M] Dashboard"});
-            ui.inputBar("ENTER CHOICE", ConsoleUI.ACTIVE_TABLE_WIDTH);
-            String choice = ui.readText(ui.prompt(ConsoleUI.ACTIVE_TABLE_WIDTH));
+            ui.inputBar("ENTER CHOICE", TerminalUI.ACTIVE_TABLE_WIDTH);
+            String choice = ui.readText(ui.prompt(TerminalUI.ACTIVE_TABLE_WIDTH));
             if (choice.equalsIgnoreCase("M")) {
                 requestDashboardReturn();
                 return;
@@ -1596,25 +1603,25 @@ public class GameRentalSystem {
         while (true) {
             int start = starts.get(page);
             int end = starts.get(page + 1);
-            ui.printHeader("OVERDUE RENTALS - Earliest Due Date First", ConsoleUI.OVERDUE_TABLE_WIDTH);
+            ui.printHeader("OVERDUE RENTALS - Earliest Due Date First", TerminalUI.OVERDUE_TABLE_WIDTH);
             ui.showListStatus("Earliest due date first · Page: " + (page + 1) + "/" + totalPages,
-                "Showing " + (start + 1) + "-" + end + " of " + rentals.size(), ConsoleUI.OVERDUE_TABLE_WIDTH);
+                "Showing " + (start + 1) + "-" + end + " of " + rentals.size(), TerminalUI.OVERDUE_TABLE_WIDTH);
             ui.showOverdueRentalHeader(rentals.size(), start, end);
 
             for (int i = start; i < end; i++) {
                 Rental rental = rentals.get(i);
-                long daysOverdue = RentalService.daysOverdue(rental.dueDate, now);
+                long daysOverdue = RentalManager.daysOverdue(rental.dueDate, now);
                 ui.showOverdueRentalRow(daysOverdue * LATE_FEE_PER_DAY * rental.quantity, rental, daysOverdue);
             }
-            ui.info(ui.tableLine(ConsoleUI.OVERDUE_TABLE_WIDTH));
+            ui.info(ui.tableLine(TerminalUI.OVERDUE_TABLE_WIDTH));
 
             Rental top = rentals.get(0);
             ui.showEarliestDueRental(top);
             ui.showPagination(page, totalPages);
             ui.showNavigationOptions(new String[] {"[B] Active Rentals", "[M] Dashboard"});
-            ui.inputBar("ENTER CHOICE", ConsoleUI.OVERDUE_TABLE_WIDTH);
+            ui.inputBar("ENTER CHOICE", TerminalUI.OVERDUE_TABLE_WIDTH);
 
-            String choice = ui.readText(ui.prompt(ConsoleUI.OVERDUE_TABLE_WIDTH));
+            String choice = ui.readText(ui.prompt(TerminalUI.OVERDUE_TABLE_WIDTH));
             if (choice.equalsIgnoreCase("M")) {
                 requestDashboardReturn();
                 return;
@@ -1650,9 +1657,9 @@ public class GameRentalSystem {
         while (true) {
             int start = starts.get(page);
             int end = starts.get(page + 1);
-            ui.printHeader("ADMIN AUDIT LOG (Most Recent First)", ConsoleUI.AUDIT_TABLE_WIDTH);
+            ui.printHeader("ADMIN AUDIT LOG (Most Recent First)", TerminalUI.AUDIT_TABLE_WIDTH);
             ui.showListStatus("Most recent first · Page: " + (page + 1) + "/" + totalPages,
-                "Showing " + (start + 1) + "-" + end + " of " + logs.size(), ConsoleUI.AUDIT_TABLE_WIDTH);
+                "Showing " + (start + 1) + "-" + end + " of " + logs.size(), TerminalUI.AUDIT_TABLE_WIDTH);
             ui.showAuditHeader(logs.size(), start, end);
 
             for (int i = start; i < end; i++) {
@@ -1670,11 +1677,11 @@ public class GameRentalSystem {
                 }
             }
 
-            ui.info(ui.tableLine(ConsoleUI.AUDIT_TABLE_WIDTH));
+            ui.info(ui.tableLine(TerminalUI.AUDIT_TABLE_WIDTH));
             ui.showPagination(page, totalPages);
             ui.showBackToDashboard();
-            ui.inputBar("ENTER CHOICE", ConsoleUI.AUDIT_TABLE_WIDTH);
-            String choice = ui.readText(ui.prompt(ConsoleUI.AUDIT_TABLE_WIDTH));
+            ui.inputBar("ENTER CHOICE", TerminalUI.AUDIT_TABLE_WIDTH);
+            String choice = ui.readText(ui.prompt(TerminalUI.AUDIT_TABLE_WIDTH));
             if (choice.equalsIgnoreCase("N") && page < totalPages - 1) {
                 page++;
             }
@@ -1794,7 +1801,7 @@ public class GameRentalSystem {
                         ui.error("Title cannot be empty.");
                         continue;
                     }
-                    if (!GameCatalogService.validTitle(input)) {
+                    if (!GameCatalog.validTitle(input)) {
                         ui.error("Use a title of 1-100 characters without control characters or the | symbol.");
                         continue;
                     }
@@ -2192,4 +2199,3 @@ public class GameRentalSystem {
         }
     }
 }
-

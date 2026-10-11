@@ -1,7 +1,7 @@
 public class Main {
     public static void main(String[] args) {
         try {
-            GameRentalSystem system = new GameRentalSystem();
+            Queue2Play system = new Queue2Play();
             system.start();
         } catch (InputEndedException e) {
             System.out.println("Input ended. Pending input was not submitted.");

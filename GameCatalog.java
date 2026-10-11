@@ -1,7 +1,7 @@
 import java.util.ArrayList;
 import java.util.Map;
 // Owns inventory lookup and the search/sort algorithms used by the menus.
-class GameCatalogService {
+class GameCatalog {
     static boolean validTitle(String title) {
         return title != null && !title.isBlank() && title.length() <= 100 && !title.contains("|")
         && !containsControlCharacter(title);
@@ -41,9 +41,9 @@ class GameCatalogService {
     static void validate(String title, String platform, double price, int stock) {
         RentalDataStore.require(validTitle(title), "Invalid game title");
         RentalDataStore.require(platform.equals("PS5") || platform.equals("Xbox") || platform.equals("Nintendo"), "Invalid platform");
-        RentalDataStore.require(Double.isFinite(price) && price >= GameRentalSystem.MIN_RENTAL_PRICE
-            && price <= GameRentalSystem.MAX_RENTAL_PRICE, "Invalid rental price");
-        RentalDataStore.require(stock >= 0 && stock <= GameRentalSystem.MAX_GAME_STOCK, "Invalid stock");
+        RentalDataStore.require(Double.isFinite(price) && price >= Queue2Play.MIN_RENTAL_PRICE
+            && price <= Queue2Play.MAX_RENTAL_PRICE, "Invalid rental price");
+        RentalDataStore.require(stock >= 0 && stock <= Queue2Play.MAX_GAME_STOCK, "Invalid stock");
     }
 
     private final Map<String, Game> games;
@@ -51,7 +51,7 @@ class GameCatalogService {
     int xboxCount;
     int nintendoCount;
 
-    GameCatalogService(Map<String, Game> games) {
+    GameCatalog(Map<String, Game> games) {
         this.games = games;
     }
 

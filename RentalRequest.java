@@ -3,7 +3,7 @@ class RentalRequest {
     User client;
     Game game;
     boolean vip;            // membership when the request was made
-    int rentalDays = GameRentalSystem.RENTAL_DAYS;   // rental length chosen in the order
+    int rentalDays = Queue2Play.RENTAL_DAYS;   // rental length chosen in the order
     int quantity = 1;       // copies of the game requested in the order
 
 

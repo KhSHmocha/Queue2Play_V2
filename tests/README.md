@@ -107,6 +107,31 @@ Receipt navigation tests check that R leaves the receipt visible, invalid input
 retries without redrawing the queue, B returns to Checkout, and M goes directly
 to Dashboard. Both empty and populated receipts preserve rental/session state.
 
+Large transaction display checks can also run separately:
+
+```powershell
+java "-Djava.io.tmpdir=$testBuild" -cp $testBuild BehaviorRegressionTest pagination
+```
+
+Receipts and processed return results use N/P pages. Large checkout batch previews
+use F/P pages, preserving N/NO for declining and Y/YES for approving the whole
+batch. These tests display forty records at 120, 81, 60 and 40 columns and at
+50, 36, 30, 24 and 20 rows, including the navigation and prompt. They check
+complete titles, every record, full-session totals, usable keys, repeated invalid
+input, Back/Dashboard and unchanged queue, stock and VIP state. Short screens use
+a compact heading; narrow transaction records wrap across the available width.
+Invalid result navigation clears the retry area before showing the error and
+choices, keeping repeated errors from accumulating above the prompt.
+
+Receipt metadata (administrator and session time) is separate from transaction
+rows. Empty receipts count zero records; cancellations have a STATUS column
+instead of occupying DUE. Compact transaction records retain field labels.
+Return confirmations use F/P pages, keeping Y/YES and N/NO for the entire
+selection. Order Summary and Edit Order use N/P; cart line numbers stay tied
+to the whole cart so removing a line retains the existing selection behavior.
+The pagination checks include these screens, full wrapped titles, short/narrow
+viewports, invalid-input retries, and unchanged drafts/rental state.
+
 Completed-result tests run the real navigation loop for Order Submitted, the
 last queue cancellation, VIP upgrade, checkout exit receipts, processed returns,
 and Account Created. They check M Dashboard/Main Menu, invalid keys without

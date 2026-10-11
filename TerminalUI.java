@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 // Format plain text first, then add ANSI styles without changing visible widths.
 // Screens are still described with + - = | characters; the renderer below turns them
 // into ZendCash-style box drawing (and the baby-pink palette) when text is printed.
-public class ConsoleUI {
+public class TerminalUI {
     // Box-drawing characters need UTF-8 on the console.
     static {
         try {
@@ -42,6 +42,7 @@ public class ConsoleUI {
     private final boolean cursorEnabled = Boolean.parseBoolean(
         System.getProperty("q2p.ansi", String.valueOf(System.console() != null)));
     private boolean outputAtLineStart = true;
+    private boolean compactInput;
 
     private static int configuredWidth() {
         try {
@@ -227,29 +228,29 @@ public class ConsoleUI {
             Rental rental = rentals.get(i);
             if (kind.equals("history")) {
                 heights[i] = recordHeight(new String[] {rentalLabel(rental.rentalNumber), rental.game.title,
-                    String.valueOf(rental.quantity), rental.checkoutDate.format(GameRentalSystem.TABLE_DATE_FORMAT),
-                    rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT), money(rental.amount), rental.status},
+                    String.valueOf(rental.quantity), rental.checkoutDate.format(Queue2Play.TABLE_DATE_FORMAT),
+                    rental.dueDate.format(Queue2Play.TABLE_DATE_FORMAT), money(rental.amount), rental.status},
                     new int[] {8, 28, 3, 21, 21, 9, 10}, width);
             } else if (kind.equals("return")) {
                 heights[i] = recordHeight(new String[] {String.valueOf(i + 1), rentalLabel(rental.rentalNumber),
                     rental.client.username, rental.game.title, String.valueOf(rental.quantity),
-                    rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT)},
+                    rental.dueDate.format(Queue2Play.TABLE_DATE_FORMAT)},
                     new int[] {4, 8, 14, 30, 3, 21}, width);
             } else if (kind.equals("overdue")) {
                 heights[i] = recordHeight(new String[] {rentalLabel(rental.rentalNumber), rental.client.username,
-                    rental.game.title, String.valueOf(rental.quantity), rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT),
-                    String.valueOf(RentalService.daysOverdue(rental.dueDate, LocalDateTime.now())),
-                    money(GameRentalSystem.LATE_FEE_PER_DAY * rental.quantity
-                        * RentalService.daysOverdue(rental.dueDate, LocalDateTime.now()))},
+                    rental.game.title, String.valueOf(rental.quantity), rental.dueDate.format(Queue2Play.TABLE_DATE_FORMAT),
+                    String.valueOf(RentalManager.daysOverdue(rental.dueDate, LocalDateTime.now())),
+                    money(Queue2Play.LATE_FEE_PER_DAY * rental.quantity
+                        * RentalManager.daysOverdue(rental.dueDate, LocalDateTime.now()))},
                     new int[] {8, 14, 28, 3, 21, 9, 9}, width);
             } else {
                 heights[i] = recordHeight(new String[] {rentalLabel(rental.rentalNumber), rental.client.username,
                     rental.game.title, rental.game.platform, String.valueOf(rental.quantity),
-                    rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT), rental.status},
+                    rental.dueDate.format(Queue2Play.TABLE_DATE_FORMAT), rental.status},
                     new int[] {8, 14, 28, 10, 3, 21, 10}, width);
             }
             if (kind.equals("history") && rental.returnDate != null) {
-                String returned = "Returned: " + rental.returnDate.format(GameRentalSystem.TABLE_DATE_FORMAT)
+                String returned = "Returned: " + rental.returnDate.format(Queue2Play.TABLE_DATE_FORMAT)
                     + " | Days late: " + rental.daysLate + " | Recorded late fee: " + money(rental.lateFee);
                 heights[i] += Math.max(1, (returned.length() + terminalWidth - 1) / terminalWidth);
             }
@@ -278,7 +279,7 @@ public class ConsoleUI {
             String action = logs.get(i);
             if (parts.length == 2) {
                 try {
-                    LocalDateTime.parse(parts[0], GameRentalSystem.LOG_STORAGE_FORMAT);
+                    LocalDateTime.parse(parts[0], Queue2Play.LOG_STORAGE_FORMAT);
                     action = parts[1];
                 } catch (java.time.DateTimeException e) {
                     // Keep the complete older record visible.
@@ -887,7 +888,9 @@ public class ConsoleUI {
             printBoxCentered("", width);
             printLine(border(width, '-'));
             flushBorder(false);
-            printLine();
+            if (!compactInput) {
+                printLine();
+            }
         }
         if (!guide.isEmpty()) {
             printLine();
@@ -926,12 +929,12 @@ public class ConsoleUI {
             case "ENTER QUANTITY":
             case "QUANTITY TO ADD":
             case "QUANTITY TO DECREASE": return "Whole copies only.";
-            case "RENTAL DURATION": return "1-" + GameRentalSystem.MAX_RENTAL_DAYS + " days.";
+            case "RENTAL DURATION": return "1-" + Queue2Play.MAX_RENTAL_DAYS + " days.";
             case "QUEUE NUMBER TO CANCEL": return "Queue number.\nExample: 003.";
             case "DAYS LATE": return "Enter days late; use 0 if returned on time.";
-            case "RENTAL PRICE": return money(GameRentalSystem.MIN_RENTAL_PRICE)
-                + " to " + money(GameRentalSystem.MAX_RENTAL_PRICE) + ".";
-            case "AVAILABLE COPIES": return "1-" + GameRentalSystem.MAX_GAME_STOCK + " copies.";
+            case "RENTAL PRICE": return money(Queue2Play.MIN_RENTAL_PRICE)
+                + " to " + money(Queue2Play.MAX_RENTAL_PRICE) + ".";
+            case "AVAILABLE COPIES": return "1-" + Queue2Play.MAX_GAME_STOCK + " copies.";
             case "ENTER Y / N": return "[Y] Yes      [N] No";
             default: return "";
         }
@@ -1019,8 +1022,15 @@ public class ConsoleUI {
             if (!previousDestination.isEmpty() && choice.equalsIgnoreCase("B")) {
                 return true;
             }
-            error("Use the displayed navigation key.");
+            clearResultRetry("Use the displayed navigation key.");
         }
+    }
+
+    private void clearResultRetry(String message) {
+        int width = currentWidth;
+        clearScreen();
+        currentWidth = width;
+        error(message);
     }
 
     void success(String message) {
@@ -1710,50 +1720,106 @@ public class ConsoleUI {
         }
     }
 
-    void showOrderSummary(User client, LinkedHashMap<Game, Integer> cart, int days, RentalService rentalService) {
-        printHeader("ORDER SUMMARY", ConsoleUI.ORDER_TABLE_WIDTH);
-        if (cart.isEmpty()) {
-            showEmptyState("Your cart is empty. Add a game before submitting.");
-            return;
-        }
+    void showOrderSummary(User client, LinkedHashMap<Game, Integer> cart, int days, RentalManager rentalService) {
+        showCartPage(client, cart, days, rentalService, false, 0, cartPages(client, cart, days, rentalService, false));
+    }
 
-        double total = 0;
-        int totalQuantity = 0;
+    private ArrayList<String[]> cartRows(User client, LinkedHashMap<Game, Integer> cart, int days,
+            RentalManager service, boolean editing) {
+        ArrayList<String[]> rows = new ArrayList<>();
         int line = 1;
-        printLine(tableLine(ORDER_TABLE_WIDTH));
-        printLine(String.format("%-4s | %-26s | %-10s | %5s | %10s | %10s",
-            "NO.", "GAME TITLE", "PLATFORM", "QTY", "UNIT PRICE", "SUBTOTAL"));
-        printLine(tableLine(ORDER_TABLE_WIDTH));
         for (Game game : cart.keySet()) {
             int quantity = cart.get(game);
-            double unitPrice = rentalService.calculateRentalCost(client, game, days);
-            double subtotal = rentalService.calculateRentalCost(client, game, days, quantity);
-            total += subtotal;
-            totalQuantity += quantity;
-            printLine(String.format("%-4d | %-26s | %-10s | %5d | %10s | %10s",
-                line, fit(game.title, 26),
-                fit(platformColor(game.platform), 10), quantity, money(unitPrice), money(subtotal)));
+            if (editing) {
+                rows.add(new String[] {String.valueOf(line), game.title, game.platform, String.valueOf(quantity)});
+            } else {
+                rows.add(new String[] {String.valueOf(line), game.title, game.platform, String.valueOf(quantity),
+                    money(service.calculateRentalCost(client, game, days)),
+                    money(service.calculateRentalCost(client, game, days, quantity))});
+            }
             line++;
         }
-        printLine(tableLine(ORDER_TABLE_WIDTH));
-        String membership = membershipColor(client.isVip());
+        return rows;
+    }
+
+    private String[] cartSummary(User client, LinkedHashMap<Game, Integer> cart, int days,
+            RentalManager service, boolean editing) {
+        if (editing) {
+            return new String[] {"Rental Duration: " + rentalDurationText(days)};
+        }
+        double total = 0;
+        int totalQuantity = 0;
+        for (Game game : cart.keySet()) {
+            int quantity = cart.get(game);
+            total += service.calculateRentalCost(client, game, days, quantity);
+            totalQuantity += quantity;
+        }
+        String membership = client.membership;
         if (client.isVip()) {
             membership += " - 10% discount applied";
         }
-        printCenteredDetails(new String[] {
-            "Total Quantity : " + totalQuantity,
-            "Rental Duration: " + rentalDurationText(days),
-            "Membership: " + membership,
-            "Total Cost: " + money(total)
-        });
+        return new String[] {"Total Quantity: " + totalQuantity + " · Total Cost: " + money(total),
+            "Rental Duration: " + rentalDurationText(days), "Membership: " + membership};
+    }
+
+    ArrayList<Integer> cartPages(User client, LinkedHashMap<Game, Integer> cart, int days,
+            RentalManager service, boolean editing) {
+        if (editing) {
+            return transactionPages(cartRows(client, cart, days, service, true),
+                new String[] {"NO.", "GAME TITLE", "PLATFORM", "QTY"}, new int[] {4, 30, 10, 5},
+                EDIT_ORDER_TABLE_WIDTH, cartSummary(client, cart, days, service, true));
+        }
+        return transactionPages(cartRows(client, cart, days, service, false),
+            new String[] {"NO.", "GAME TITLE", "PLATFORM", "QTY", "UNIT PRICE", "SUBTOTAL"},
+            new int[] {4, 30, 10, 5, 10, 10}, ORDER_TABLE_WIDTH, cartSummary(client, cart, days, service, false));
+    }
+
+    void showCartPage(User client, LinkedHashMap<Game, Integer> cart, int days, RentalManager service,
+            boolean editing, int page, ArrayList<Integer> starts) {
+        if (pendingMessage != null && !pendingMessage.isEmpty()) {
+            String message = pendingMessage;
+            currentWidth = Math.min(editing ? EDIT_ORDER_TABLE_WIDTH : ORDER_TABLE_WIDTH, terminalWidth);
+            clearResultRetry(message);
+            return;
+        }
+        if (editing) {
+            showTransactionPage("EDIT ORDER", cartRows(client, cart, days, service, true),
+                new String[] {"NO.", "GAME TITLE", "PLATFORM", "QTY"}, "%-4s | %-30s | %-10s | %5s",
+                new int[] {4, 30, 10, 5}, EDIT_ORDER_TABLE_WIDTH,
+                cartSummary(client, cart, days, service, true), page, starts);
+        } else {
+            showTransactionPage("ORDER SUMMARY", cartRows(client, cart, days, service, false),
+                new String[] {"NO.", "GAME TITLE", "PLATFORM", "QTY", "UNIT PRICE", "SUBTOTAL"},
+                "%-4s | %-30s | %-10s | %5s | %10s | %10s", new int[] {4, 30, 10, 5, 10, 10},
+                ORDER_TABLE_WIDTH, cartSummary(client, cart, days, service, false), page, starts);
+        }
+    }
+
+    void showCartActions(boolean editing, int page, int pages) {
+        if (terminalHeight < 30) {
+            String[] choices = {"[1] Confirm Order", "[E] Edit Order", "[B] Rental Duration", "[M] Discard Cart / Dashboard"};
+            if (editing) {
+                choices = new String[] {"[1] Add Game", "[2] Remove Game", "[3] Change Duration", "[B] Order Summary", "[M] Discard Cart / Dashboard"};
+            }
+            showTransactionNavigation(page, pages, "N", choices);
+        } else {
+            showPagination(page, pages);
+            if (editing) {
+                showFeatureOptions(new String[] {"[1] Add Game", "[2] Remove Game", "[3] Change Duration"});
+                showNavigationOptions(new String[] {"[B] Order Summary", "[M] Discard Cart / Dashboard"});
+            } else {
+                showOrderConfirmationOptions();
+            }
+            inputBar("ENTER CHOICE", currentWidth);
+        }
     }
 
     void showGameTableHeader(int total, int start, int end) {
         printLine("Showing " + (start + 1) + "-" + end + " of " + total + " games");
         printLine();
-        printLine(tableLine(ConsoleUI.GAME_TABLE_WIDTH));
+        printLine(tableLine(TerminalUI.GAME_TABLE_WIDTH));
         printRecord("%-4s | %-6s | %-30s | %-10s | %8s | %5s | %-12s", new String[] {"NO.", "ID", "GAME TITLE", "PLATFORM", "PRICE", "STOCK", "STATUS"}, new int[] {4, 6, 30, 10, 8, 5, 12});
-        printLine(tableLine(ConsoleUI.GAME_TABLE_WIDTH));
+        printLine(tableLine(TerminalUI.GAME_TABLE_WIDTH));
     }
 
     void showGameRow(int shownNumber, Game game) {
@@ -1880,16 +1946,16 @@ public class ConsoleUI {
             "[1] 1 Day",
             "[2] 3 Days",
             "[3] 7 Days",
-            "[4] Custom Duration (1-" + GameRentalSystem.MAX_RENTAL_DAYS + " days)"
+            "[4] Custom Duration (1-" + Queue2Play.MAX_RENTAL_DAYS + " days)"
         });
         showNavigationOptions(new String[] {"[B] " + previousScreen, "[M] Discard Cart / Dashboard"});
     }
 
     void showEditOrderTableHeader() {
-        printLine(tableLine(ConsoleUI.EDIT_ORDER_TABLE_WIDTH));
+        printLine(tableLine(TerminalUI.EDIT_ORDER_TABLE_WIDTH));
         printFormatted(String.format("%-4s | %-30s | %-10s | %5s%n",
             "NO.", "GAME TITLE", "PLATFORM", "QTY"));
-        printLine(tableLine(ConsoleUI.EDIT_ORDER_TABLE_WIDTH));
+        printLine(tableLine(TerminalUI.EDIT_ORDER_TABLE_WIDTH));
     }
 
     void showCartRow(int quantity, int line, Game game) {
@@ -1911,9 +1977,9 @@ public class ConsoleUI {
 
     void showSubmittedQueueHeader() {
         printLine();
-        printLine(tableLine(ConsoleUI.QUEUE_TABLE_WIDTH));
+        printLine(tableLine(TerminalUI.QUEUE_TABLE_WIDTH));
         printRecord("%-8s | %-30s | %-10s | %5s | %8s", new String[] {"QUEUE #", "GAME TITLE", "PLATFORM", "QTY", "POSITION"}, new int[] {8, 30, 10, 5, 8});
-        printLine(tableLine(ConsoleUI.QUEUE_TABLE_WIDTH));
+        printLine(tableLine(TerminalUI.QUEUE_TABLE_WIDTH));
     }
 
     void showQueueRequestRow(int position, RentalRequest request) {
@@ -1928,23 +1994,23 @@ public class ConsoleUI {
     }
 
     void showQueueRequestHeader() {
-        printLine(tableLine(ConsoleUI.QUEUE_TABLE_WIDTH));
+        printLine(tableLine(TerminalUI.QUEUE_TABLE_WIDTH));
         printRecord("%-8s | %-30s | %-10s | %5s | %8s", new String[] {"QUEUE #", "GAME TITLE", "PLATFORM", "QTY", "POSITION"}, new int[] {8, 30, 10, 5, 8});
-        printLine(tableLine(ConsoleUI.QUEUE_TABLE_WIDTH));
+        printLine(tableLine(TerminalUI.QUEUE_TABLE_WIDTH));
     }
 
     void showHistoryTableHeader(int total, int start, int end) {
-        printLine(tableLine(ConsoleUI.HISTORY_TABLE_WIDTH));
+        printLine(tableLine(TerminalUI.HISTORY_TABLE_WIDTH));
         printRecord("%-8s | %-28s | %3s | %-21s | %-21s | %9s | %-10s", new String[] {"RENTAL #", "GAME TITLE", "QTY", "RENTED ON", "DUE ON", "AMOUNT", "STATUS"}, new int[] {8, 28, 3, 21, 21, 9, 10});
-        printLine(tableLine(ConsoleUI.HISTORY_TABLE_WIDTH));
+        printLine(tableLine(TerminalUI.HISTORY_TABLE_WIDTH));
     }
 
     void showHistoryRow(Rental rental) {
         printRecord("%-8s | %-28s | %3s | %-21s | %-21s | %9s | %-10s", new String[] {rentalLabel(rental.rentalNumber), rental.game.title, String.valueOf(rental.quantity),
-                rental.checkoutDate.format(GameRentalSystem.TABLE_DATE_FORMAT),
-                rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT), money(rental.amount), rental.status}, new int[] {8, 28, 3, 21, 21, 9, 10});
+                rental.checkoutDate.format(Queue2Play.TABLE_DATE_FORMAT),
+                rental.dueDate.format(Queue2Play.TABLE_DATE_FORMAT), money(rental.amount), rental.status}, new int[] {8, 28, 3, 21, 21, 9, 10});
         if (rental.returnDate != null) {
-            printLine("Returned: " + rental.returnDate.format(GameRentalSystem.TABLE_DATE_FORMAT)
+            printLine("Returned: " + rental.returnDate.format(Queue2Play.TABLE_DATE_FORMAT)
                 + " | Days late: " + rental.daysLate + " | Recorded late fee: " + money(rental.lateFee));
         }
     }
@@ -1998,7 +2064,7 @@ public class ConsoleUI {
         return dots;
     }
 
-    String checkoutNext(CheckoutQueue queue, RentalService service) {
+    String checkoutNext(CheckoutQueue queue, RentalManager service) {
         RentalRequest next = queue.findNextEligibleRequest();
         if (next == null) {
             return "NEXT  none ready";
@@ -2026,7 +2092,7 @@ public class ConsoleUI {
     }
 
 
-    void showCheckoutQueue(CheckoutQueue queue, RentalService service) {
+    void showCheckoutQueue(CheckoutQueue queue, RentalManager service) {
         clearScreen();
         checkoutDisplay = true;
         currentWidth = CHECKOUT_QUEUE_TABLE_WIDTH;
@@ -2109,7 +2175,7 @@ public class ConsoleUI {
         showTapeInput();
     }
 
-    void showCheckoutTapeFooter(GameRentalSystem.CheckoutSession session, CheckoutQueue queue, RentalService service) {
+    void showCheckoutTapeFooter(Queue2Play.CheckoutSession session, CheckoutQueue queue, RentalManager service) {
         checkoutPages = checkoutPageStarts(queue.getDisplayRequests(queue.previewReadyRequests())).size() - 1;
         checkoutPage = Math.min(checkoutPage, checkoutPages - 1);
         showSessionStatus(session, queue, service);
@@ -2163,7 +2229,7 @@ public class ConsoleUI {
         endCheckoutCard('-');
     }
 
-    void showSessionStatus(GameRentalSystem.CheckoutSession session, CheckoutQueue queue, RentalService service) {
+    void showSessionStatus(Queue2Play.CheckoutSession session, CheckoutQueue queue, RentalManager service) {
         beginCheckoutCard('=');
         String counts = "SESSION   APPROVED " + session.approved + "   CANCELLED " + session.cancelled
             + "   TOTAL " + money(session.total);
@@ -2223,7 +2289,7 @@ public class ConsoleUI {
         }
     }
 
-    boolean confirmCheckout(RentalRequest request, RentalService service) {
+    boolean confirmCheckout(RentalRequest request, RentalManager service) {
         double cost = service.calculateRentalCost(request.client, request.game, request.rentalDays, request.quantity);
         String prefix = "Approve " + queueLabel(request.queueNumber) + " " + fit(request.client.username, 10) + " · ";
         String suffix = " x" + request.quantity + " · " + money(cost) + " ?   [Y] Yes   [N] No";
@@ -2242,7 +2308,312 @@ public class ConsoleUI {
         return confirmCheckoutAction("Confirm batch? [Y] Approve " + count + " [N] Cancel");
     }
 
-    void showCheckoutBatch(ArrayList<RentalRequest> planned, CheckoutQueue queue, RentalService service) {
+    // These pages contain display copies only. They never process a transaction.
+    private boolean compactTransactionRows() {
+        return terminalHeight < 30 || terminalWidth < CHECKOUT_QUEUE_TABLE_WIDTH;
+    }
+
+    private String labelledRecord(String[] headings, String[] cells) {
+        String text = "";
+        for (int i = 0; i < cells.length; i++) {
+            if (!cells[i].isEmpty()) {
+                if (!text.isEmpty()) {
+                    text += " | ";
+                }
+                text += headings[i] + ": " + cells[i];
+            }
+        }
+        return text;
+    }
+
+    private void printTransactionRecord(String format, String[] headings, String[] cells, int[] widths, int width) {
+        if (compactTransactionRows()) {
+            boolean first = true;
+            for (String line : wrapText(labelledRecord(headings, cells), Math.min(width, terminalWidth) - 2)) {
+                printLine(first ? line : "  " + line);
+                first = false;
+            }
+        } else {
+            printRecord(format, cells, widths);
+        }
+    }
+
+    private ArrayList<Integer> transactionPages(ArrayList<String[]> rows, String[] headings,
+            int[] widths, int width, String[] summary) {
+        return transactionPages(rows, headings, widths, width, summary, new String[0]);
+    }
+
+    private ArrayList<Integer> transactionPages(ArrayList<String[]> rows, String[] headings,
+            int[] widths, int width, String[] summary, String[] details) {
+        boolean previous = checkoutDisplay;
+        checkoutDisplay = false;
+        int[] heights = new int[rows.size()];
+        for (int i = 0; i < rows.size(); i++) {
+            if (compactTransactionRows()) {
+                heights[i] = wrappedLines(labelledRecord(headings, rows.get(i)), Math.min(width, terminalWidth) - 2);
+            } else {
+                heights[i] = recordHeight(rows.get(i), widths, width);
+            }
+        }
+        int summaryHeight = 0;
+        for (String line : summary) {
+            summaryHeight += wrappedLines(line, Math.min(width, terminalWidth));
+        }
+        int reserved = 12 + summaryHeight;
+        if (terminalHeight >= 30) {
+            reserved = 19 + summaryHeight + recordHeight(headings, widths, width);
+        }
+        for (String line : details) {
+            reserved += wrappedLines(line, Math.min(width, terminalWidth) - 4);
+        }
+        if (details.length > 0 && terminalHeight >= 30) {
+            reserved += 4;
+        }
+        ArrayList<Integer> starts = pageStarts(heights, 9, reserved);
+        checkoutDisplay = previous;
+        return starts;
+    }
+
+    private void showTransactionPage(String title, ArrayList<String[]> rows, String[] headings,
+            String format, int[] widths, int width, String[] summary, int page, ArrayList<Integer> starts) {
+        showTransactionPage(title, rows, headings, format, widths, width, summary, page, starts, new String[0]);
+    }
+
+    private void showTransactionPage(String title, ArrayList<String[]> rows, String[] headings,
+            String format, int[] widths, int width, String[] summary, int page, ArrayList<Integer> starts,
+            String[] details) {
+        boolean previous = checkoutDisplay;
+        checkoutDisplay = false;
+        if (terminalHeight < 30) {
+            clearScreen();
+            currentWidth = Math.min(width, terminalWidth);
+            printLine(fit(title, currentWidth - 12) + "  " + (page + 1) + "/" + (starts.size() - 1));
+        } else {
+            printHeader(title, width);
+        }
+        if (details.length > 0) {
+            if (terminalHeight >= 30) {
+                printLine(border(currentWidth, '='));
+                for (String line : details) {
+                    printWrappedBoxText(line, currentWidth);
+                }
+                printLine(border(currentWidth, '='));
+                for (String line : summary) {
+                    printWrappedBoxText(line, currentWidth);
+                }
+                printLine(border(currentWidth, '='));
+                flushBorder(false);
+            } else {
+                for (String line : details) {
+                    for (String part : wrapText(line, currentWidth)) {
+                        printLine(part);
+                    }
+                }
+            }
+        }
+        int start = starts.get(page);
+        int end = starts.get(page + 1);
+        String state = "Page " + (page + 1) + "/" + (starts.size() - 1) + " · Rows "
+                + (rows.isEmpty() ? 0 : start + 1) + "-" + end + "/" + rows.size();
+        if (terminalHeight >= 30) {
+            for (String part : wrapText(state, currentWidth)) {
+                printLine(String.format("%-" + currentWidth + "s", part));
+            }
+        }
+        if (terminalHeight >= 30 && !compactTransactionRows()) {
+            printLine(tableLine(currentWidth));
+            printRecord(format, headings, widths);
+        }
+        for (int i = start; i < end; i++) {
+            printTransactionRecord(format, headings, rows.get(i), widths, width);
+        }
+        if (rows.isEmpty()) {
+            String message = "No transactions in this session.";
+            if (title.equals("EDIT ORDER") || title.equals("ORDER SUMMARY")) {
+                message = "Your cart is empty.";
+            }
+            printLine(center(message, currentWidth));
+        }
+        if (terminalHeight >= 30) {
+            printLine(tableLine(currentWidth));
+        }
+        if (details.length == 0 || terminalHeight < 30) {
+            for (String line : summary) {
+                for (String part : wrapText(line, currentWidth)) {
+                    printLine(String.format("%-" + currentWidth + "s", part));
+                }
+            }
+        }
+        flushBorder(false);
+        checkoutDisplay = previous;
+    }
+
+    private void showTransactionNavigation(int page, int pages, String nextKey, String[] destinations) {
+        ArrayList<String> choices = new ArrayList<>();
+        if (page < pages - 1) {
+            choices.add("[" + nextKey + "] " + (terminalHeight < 30 ? "Next" : "Next Page"));
+        }
+        if (page > 0) {
+            choices.add(terminalHeight < 30 ? "[P] Previous" : "[P] Previous Page");
+        }
+        for (String destination : destinations) {
+            choices.add(destination);
+        }
+        showChoiceGroup(choices.toArray(new String[0]));
+        compactInput = terminalHeight < 30;
+        inputBar("ENTER CHOICE", currentWidth, "");
+        compactInput = false;
+    }
+
+    private ArrayList<String[]> receiptRows(Queue2Play.CheckoutSession session) {
+        ArrayList<String[]> rows = new ArrayList<>();
+        for (Queue2Play.CheckoutEntry entry : session.entries) {
+            if (entry.rental != null) {
+                Rental rental = entry.rental;
+                rows.add(new String[] {rentalLabel(rental.rentalNumber), rental.client.username,
+                    rental.game.title, String.valueOf(rental.quantity), money(rental.amount), rental.dueDate.format(RECEIPT_DATE), "APPROVED"});
+            } else {
+                RentalRequest request = entry.cancelled;
+                rows.add(new String[] {queueLabel(request.queueNumber), request.client.username,
+                    request.game.title, String.valueOf(request.quantity), "-", "-", "CANCELLED"});
+            }
+        }
+        return rows;
+    }
+
+    private String[] receiptSummary(Queue2Play.CheckoutSession session, CheckoutQueue queue) {
+        int queued = queue.getRequests().size();
+        int waiting = queued - queue.previewReadyRequests().size();
+        return new String[] {"Approved " + session.approved + " · " + session.copies + " copies · Cancelled " + session.cancelled
+            + " · TOTAL " + money(session.total), "Left in queue: " + queued + " (" + waiting + " waiting)"};
+    }
+
+    ArrayList<Integer> receiptPages(Queue2Play.CheckoutSession session, CheckoutQueue queue) {
+        return transactionPages(receiptRows(session), new String[] {"RECORD", "CUSTOMER", "GAME", "QTY", "AMOUNT", "DUE", "STATUS"},
+            new int[] {7, 10, 20, 3, 7, 7, 9}, CHECKOUT_QUEUE_TABLE_WIDTH, receiptSummary(session, queue), receiptDetails(session));
+    }
+
+    private String[] receiptDetails(Queue2Play.CheckoutSession session) {
+        return new String[] {"ADMIN " + session.admin + " · "
+            + session.started.format(DateTimeFormatter.ofPattern("MMM dd, yyyy hh:mm a"))};
+    }
+
+    void showCheckoutReceiptPage(Queue2Play.CheckoutSession session, CheckoutQueue queue,
+            int page, ArrayList<Integer> starts) {
+        showTransactionPage("CHECKOUT SESSION RECEIPT", receiptRows(session),
+            new String[] {"RECORD", "CUSTOMER", "GAME", "QTY", "AMOUNT", "DUE", "STATUS"},
+            "%-7s | %-10s | %-20s | %3s | %7s | %-7s | %-9s", new int[] {7, 10, 20, 3, 7, 7, 9},
+            CHECKOUT_QUEUE_TABLE_WIDTH, receiptSummary(session, queue), page, starts, receiptDetails(session));
+    }
+
+    boolean waitForReceiptNavigation(Queue2Play.CheckoutSession session, CheckoutQueue queue, String previousDestination) {
+        ArrayList<Integer> starts = receiptPages(session, queue);
+        int pages = starts.size() - 1;
+        if (pages == 1 && previousDestination.isEmpty()) {
+            return waitForResultNavigation("", "Dashboard");
+        }
+        int page = 0;
+        String[] destinations = {"[M] Dashboard"};
+        if (!previousDestination.isEmpty()) {
+            destinations = new String[] {"[B] " + previousDestination, "[M] Dashboard"};
+        }
+        while (true) {
+            showTransactionNavigation(page, pages, "N", destinations);
+            String choice = readText(prompt());
+            if (choice.equalsIgnoreCase("M")) {
+                return false;
+            }
+            if (!previousDestination.isEmpty() && (choice.equalsIgnoreCase("B") || choice.equals("0"))) {
+                return true;
+            }
+            if (choice.equalsIgnoreCase("N") && page < pages - 1) {
+                page++;
+            } else if (choice.equalsIgnoreCase("P") && page > 0) {
+                page--;
+            } else {
+                clearResultRetry("Use the displayed navigation keys.");
+                continue;
+            }
+            showCheckoutReceiptPage(session, queue, page, starts);
+        }
+    }
+
+    private ArrayList<String[]> batchRows(ArrayList<RentalRequest> planned, CheckoutQueue queue, RentalManager service) {
+        ArrayList<String[]> rows = new ArrayList<>();
+        int streak = queue.vipStreak;
+        for (int i = 0; i < planned.size(); i++) {
+            RentalRequest request = planned.get(i);
+            String priority = "REG";
+            if (request.vip) {
+                streak = Math.min(CheckoutQueue.VIP_BURST, streak + 1);
+                priority = "VIP " + streak + "/3";
+            } else {
+                streak = 0;
+            }
+            rows.add(new String[] {String.valueOf(i + 1), queueLabel(request.queueNumber), request.client.username,
+                request.game.title, "x" + request.quantity,
+                money(service.calculateRentalCost(request.client, request.game, request.rentalDays, request.quantity)), priority});
+        }
+        return rows;
+    }
+
+    private String[] batchSummary(ArrayList<RentalRequest> planned, CheckoutQueue queue, RentalManager service) {
+        double total = 0;
+        for (RentalRequest request : planned) {
+            total += service.calculateRentalCost(request.client, request.game, request.rentalDays, request.quantity);
+        }
+        return new String[] {"TOTAL " + planned.size() + " rentals · " + money(total),
+            "Skipped: " + (queue.getRequests().size() - planned.size()) + " waiting"};
+    }
+
+    ArrayList<Integer> batchPages(ArrayList<RentalRequest> planned, CheckoutQueue queue, RentalManager service) {
+        return transactionPages(batchRows(planned, queue, service),
+            new String[] {"NO.", "QUEUE", "CUSTOMER", "GAME", "QTY", "AMOUNT", "PRIORITY"},
+            new int[] {3, 7, 10, 24, 3, 9, 7}, CHECKOUT_QUEUE_TABLE_WIDTH, batchSummary(planned, queue, service));
+    }
+
+    void showCheckoutBatchPage(ArrayList<RentalRequest> planned, CheckoutQueue queue, RentalManager service,
+            int page, ArrayList<Integer> starts) {
+        showTransactionPage("APPROVE ALL READY", batchRows(planned, queue, service),
+            new String[] {"NO.", "QUEUE", "CUSTOMER", "GAME", "QTY", "AMOUNT", "PRIORITY"},
+            "%3s | %-7s | %-10s | %-24s | %3s | %9s | %-7s", new int[] {3, 7, 10, 24, 3, 9, 7},
+            CHECKOUT_QUEUE_TABLE_WIDTH, batchSummary(planned, queue, service), page, starts);
+    }
+
+    boolean confirmCheckoutBatch(ArrayList<RentalRequest> planned, CheckoutQueue queue, RentalManager service) {
+        ArrayList<Integer> starts = batchPages(planned, queue, service);
+        int pages = starts.size() - 1;
+        if (pages == 1 && terminalWidth >= CHECKOUT_QUEUE_TABLE_WIDTH) {
+            return confirmCheckoutBatch(planned.size());
+        }
+        int page = 0;
+        while (true) {
+            showTransactionNavigation(page, pages, "F", new String[] {"[Y] Approve All", "[N] Cancel"});
+            String choice = readText(prompt());
+            if (choice.equalsIgnoreCase("Y") || choice.equalsIgnoreCase("YES")) {
+                return true;
+            }
+            if (choice.equalsIgnoreCase("N") || choice.equalsIgnoreCase("NO")) {
+                return false;
+            }
+            if (choice.equalsIgnoreCase("F") && page < pages - 1) {
+                page++;
+            } else if (choice.equalsIgnoreCase("P") && page > 0) {
+                page--;
+            } else {
+                clearResultRetry("Use Y or N, or the displayed page keys.");
+                continue;
+            }
+            showCheckoutBatchPage(planned, queue, service, page, starts);
+        }
+    }
+
+    void showCheckoutBatch(ArrayList<RentalRequest> planned, CheckoutQueue queue, RentalManager service) {
+        ArrayList<Integer> starts = batchPages(planned, queue, service);
+        if (starts.size() > 2 || terminalWidth < CHECKOUT_QUEUE_TABLE_WIDTH) {
+            showCheckoutBatchPage(planned, queue, service, 0, starts);
+            return;
+        }
         beginCheckoutCard('=');
         printTitle("APPROVE ALL READY (" + planned.size() + ")", CHECKOUT_QUEUE_TABLE_WIDTH);
         printLine(border(currentWidth, '='));
@@ -2265,57 +2636,12 @@ public class ConsoleUI {
         }
         printLine(border(currentWidth, '-'));
         checkoutRow("TOTAL " + planned.size() + " rentals · " + money(total));
-        String skipped = "Skipped:";
-        for (RentalRequest request : queue.getRequests()) {
-            if (!planned.contains(request)) {
-                String label = queueLabel(request.queueNumber) + " (stock)";
-                if (!CheckoutQueue.validRequest(request)) {
-                    label = queueLabel(request.queueNumber) + " (invalid)";
-                }
-                if (skipped.length() + label.length() + 1 > 77) {
-                    checkoutRow(skipped);
-                    skipped = "Skipped:";
-                }
-                skipped += " " + label;
-            }
-        }
-        if (skipped.equals("Skipped:")) {
-            skipped += " none";
-        }
-        checkoutRow(skipped);
+        checkoutRow("Skipped: " + (queue.getRequests().size() - planned.size()) + " waiting (see Queue)");
         endCheckoutCard('=');
     }
 
-    void showCheckoutReceipt(GameRentalSystem.CheckoutSession session, CheckoutQueue queue) {
-        printHeader("CHECKOUT SESSION RECEIPT", CHECKOUT_QUEUE_TABLE_WIDTH);
-        checkoutRow(session.started.format(DateTimeFormatter.ofPattern("MMM dd, yyyy hh:mm a"))
-            + " · " + fit(session.admin, 32));
-        printLine(border(currentWidth, '='));
-        checkoutRow(String.format("%-8s%-11s%-24s%3s %10s  %s", "RENTAL", "CUSTOMER", "GAME", "QTY", "AMOUNT", "DUE"));
-        for (GameRentalSystem.CheckoutEntry entry : session.entries) {
-            if (entry.rental != null) {
-                Rental rental = entry.rental;
-                checkoutRow(String.format("%-8s%-11s%-24s%3d %10s  %s",
-                    rentalLabel(rental.rentalNumber), fit(rental.client.username, 10),
-                    fit(rental.game.title, 23), rental.quantity, money(rental.amount), rental.dueDate.format(RECEIPT_DATE)));
-            } else {
-                RentalRequest request = entry.cancelled;
-                checkoutRow(String.format("%-8s%-11s%-24s%3d %10s  %s",
-                    queueLabel(request.queueNumber), fit(request.client.username, 10),
-                    fit(request.game.title, 23), request.quantity, "-", "cancelled"));
-            }
-        }
-        printLine(border(currentWidth, '-'));
-        checkoutRow(session.approved + " rentals · " + session.copies + " copies · " + session.cancelled
-            + " cancelled                 TOTAL " + money(session.total));
-        int waiting = 0;
-        for (RentalRequest request : queue.getRequests()) {
-            if (!checkoutReady(request)) {
-                waiting++;
-            }
-        }
-        checkoutRow("Left in queue: " + queue.getRequests().size() + " (" + waiting + " waiting)");
-        printLine(border(currentWidth, '='));
+    void showCheckoutReceipt(Queue2Play.CheckoutSession session, CheckoutQueue queue) {
+        showCheckoutReceiptPage(session, queue, 0, receiptPages(session, queue));
     }
 
     void endCheckoutDisplay() {
@@ -2389,32 +2715,52 @@ public class ConsoleUI {
                 "Customer, game ID, or title; blank shows all.");
     }
 
-    void showSelectedReturnSummary(ArrayList<Rental> selected, LocalDateTime returnedAt, RentalService service) {
-        printHeader("ADMIN > RETURNS", "CONFIRM SELECTED RETURNS", RETURN_TABLE_WIDTH);
-        printLine("Selected rentals: " + selected.size() + " | Earliest due date first");
-        printLine(tableLine(RETURN_TABLE_WIDTH));
-        printFormatted(String.format("%-8s | %-12s | %-24s | %3s | %-17s | %4s | %9s%n",
-                "RENTAL #", "CUSTOMER", "GAME", "QTY", "DUE DATE", "LATE", "LATE FEE"));
-        printLine(tableLine(RETURN_TABLE_WIDTH));
-        double total = 0;
-        for (Rental rental : selected) {
-            int daysLate = RentalService.daysOverdue(rental.dueDate, returnedAt);
-            double fee = service.calculateLateFee(rental, daysLate);
-            total += fee;
-            printFormatted(String.format("%-8s | %-12s | %-24s | %3d | %-17s | %4d | %9s%n",
-                    rentalLabel(rental.rentalNumber), fit(rental.client.username, 12), fit(rental.game.title, 24),
-                    rental.quantity, rental.dueDate.format(DateTimeFormatter.ofPattern("MMM dd yyyy HH:mm", java.util.Locale.ENGLISH)),
-                    daysLate, money(fee)));
-        }
-        printLine(tableLine(RETURN_TABLE_WIDTH));
-        printLine("Total late fees: " + money(total));
-        printLine("Fee is $1 per copy for each started day overdue. Payment is collected separately.");
+    void showSelectedReturnSummary(ArrayList<Rental> selected, LocalDateTime returnedAt, RentalManager service) {
+        showReturnConfirmationPage(selected, returnedAt, service, 0, returnConfirmationPages(selected, returnedAt, service));
     }
 
-    boolean confirmSelectedReturns(ArrayList<Rental> selected, LocalDateTime returnedAt, RentalService service) {
+    private ArrayList<String[]> returnConfirmationRows(ArrayList<Rental> selected, LocalDateTime returnedAt, RentalManager service) {
+        ArrayList<String[]> rows = new ArrayList<>();
+        for (Rental rental : selected) {
+            int daysLate = RentalManager.daysOverdue(rental.dueDate, returnedAt);
+            rows.add(new String[] {rentalLabel(rental.rentalNumber), rental.client.username, rental.game.title,
+                String.valueOf(rental.quantity), rental.dueDate.format(DateTimeFormatter.ofPattern("MMM dd yyyy HH:mm")),
+                String.valueOf(daysLate), money(service.calculateLateFee(rental, daysLate))});
+        }
+        return rows;
+    }
+
+    private String[] returnConfirmationSummary(ArrayList<Rental> selected, LocalDateTime returnedAt, RentalManager service) {
+        double total = 0;
+        for (Rental rental : selected) {
+            int daysLate = RentalManager.daysOverdue(rental.dueDate, returnedAt);
+            total += service.calculateLateFee(rental, daysLate);
+        }
+        return new String[] {"Selected rentals: " + selected.size() + " · Total late fees: " + money(total)};
+    }
+
+    ArrayList<Integer> returnConfirmationPages(ArrayList<Rental> selected, LocalDateTime returnedAt, RentalManager service) {
+        return transactionPages(returnConfirmationRows(selected, returnedAt, service),
+            new String[] {"RENTAL #", "CUSTOMER", "GAME", "QTY", "DUE DATE", "LATE", "LATE FEE"},
+            new int[] {8, 12, 24, 3, 17, 4, 9}, RETURN_TABLE_WIDTH,
+            returnConfirmationSummary(selected, returnedAt, service));
+    }
+
+    void showReturnConfirmationPage(ArrayList<Rental> selected, LocalDateTime returnedAt, RentalManager service,
+            int page, ArrayList<Integer> starts) {
+        showTransactionPage("CONFIRM SELECTED RETURNS", returnConfirmationRows(selected, returnedAt, service),
+            new String[] {"RENTAL #", "CUSTOMER", "GAME", "QTY", "DUE DATE", "LATE", "LATE FEE"},
+            "%-8s | %-12s | %-24s | %3s | %-17s | %4s | %9s", new int[] {8, 12, 24, 3, 17, 4, 9},
+            RETURN_TABLE_WIDTH, returnConfirmationSummary(selected, returnedAt, service), page, starts);
+    }
+
+    boolean confirmSelectedReturns(ArrayList<Rental> selected, LocalDateTime returnedAt, RentalManager service) {
         showSelectedReturnSummary(selected, returnedAt, service);
+        ArrayList<Integer> starts = returnConfirmationPages(selected, returnedAt, service);
+        int pages = starts.size() - 1;
+        int page = 0;
         while (true) {
-            inputBar("CONFIRM RETURNS", RETURN_TABLE_WIDTH, "[Y] Confirm Returns   [N] Back to List");
+            showTransactionNavigation(page, pages, "F", new String[] {"[Y] Confirm Returns", "[N] Back to List"});
             String answer = readText(prompt(RETURN_TABLE_WIDTH)).trim();
             if (answer.equalsIgnoreCase("Y") || answer.equalsIgnoreCase("YES")) {
                 return true;
@@ -2422,71 +2768,134 @@ public class ConsoleUI {
             if (answer.equalsIgnoreCase("N") || answer.equalsIgnoreCase("NO")) {
                 return false;
             }
-            error("Use Y to confirm or N to return to the list.");
+            if (answer.equalsIgnoreCase("F") && page < pages - 1) {
+                page++;
+            } else if (answer.equalsIgnoreCase("P") && page > 0) {
+                page--;
+            } else {
+                clearResultRetry("Use Y to confirm or N to return to the list.");
+                continue;
+            }
+            showReturnConfirmationPage(selected, returnedAt, service, page, starts);
         }
     }
 
     void showSelectedReturnResults(ArrayList<Rental> selected) {
-        printHeader("ADMIN > RETURNS", "RETURNS PROCESSED", RETURN_TABLE_WIDTH);
-        success(selected.size() + " rental return(s) and their late fees saved.");
+        showReturnResultPage(selected, 0, returnResultPages(selected));
+    }
+
+    private ArrayList<String[]> returnResultRows(ArrayList<Rental> selected) {
+        ArrayList<String[]> rows = new ArrayList<>();
         for (Rental rental : selected) {
-            printCenteredDetails(new String[] {"Rental: " + rentalLabel(rental.rentalNumber),
-                    "Customer: " + rental.client.username, "Game: " + rental.game.title,
-                    "Quantity returned: " + rental.quantity, "Days overdue: " + rental.daysLate,
-                    "Late fee: " + money(rental.lateFee), "Current stock: " + rental.game.availableCopies});
+            rows.add(new String[] {rentalLabel(rental.rentalNumber), rental.client.username, rental.game.title,
+                String.valueOf(rental.quantity), String.valueOf(rental.daysLate), money(rental.lateFee),
+                String.valueOf(rental.game.availableCopies)});
         }
-        finishScreen();
+        return rows;
+    }
+
+    private String[] returnResultSummary(ArrayList<Rental> selected) {
+        double total = 0;
+        for (Rental rental : selected) {
+            total += rental.lateFee;
+        }
+        return new String[] {"Saved " + selected.size() + " returns · Late fees " + money(total)};
+    }
+
+    ArrayList<Integer> returnResultPages(ArrayList<Rental> selected) {
+        return transactionPages(returnResultRows(selected),
+            new String[] {"RENTAL #", "CUSTOMER", "GAME", "QTY", "LATE", "LATE FEE", "STOCK"},
+            new int[] {8, 14, 30, 3, 4, 9, 9}, RETURN_TABLE_WIDTH, returnResultSummary(selected));
+    }
+
+    void showReturnResultPage(ArrayList<Rental> selected, int page, ArrayList<Integer> starts) {
+        showTransactionPage("RETURNS PROCESSED", returnResultRows(selected),
+            new String[] {"RENTAL #", "CUSTOMER", "GAME", "QTY", "LATE", "LATE FEE", "STOCK"},
+            "%-8s | %-14s | %-30s | %3s | %4s | %9s | %9s", new int[] {8, 14, 30, 3, 4, 9, 9},
+            RETURN_TABLE_WIDTH, returnResultSummary(selected), page, starts);
+    }
+
+    boolean waitForReturnResultNavigation(ArrayList<Rental> selected, String previousDestination) {
+        ArrayList<Integer> starts = returnResultPages(selected);
+        int pages = starts.size() - 1;
+        if (pages == 1) {
+            return waitForResultNavigation(previousDestination, "Dashboard");
+        }
+        int page = 0;
+        String[] destinations = {"[M] Dashboard"};
+        if (!previousDestination.isEmpty()) {
+            destinations = new String[] {"[B] " + previousDestination, "[M] Dashboard"};
+        }
+        while (true) {
+            showTransactionNavigation(page, pages, "N", destinations);
+            String choice = readText(prompt());
+            if (choice.equalsIgnoreCase("M")) {
+                return false;
+            }
+            if (!previousDestination.isEmpty() && choice.equalsIgnoreCase("B")) {
+                return true;
+            }
+            if (choice.equalsIgnoreCase("N") && page < pages - 1) {
+                page++;
+            } else if (choice.equalsIgnoreCase("P") && page > 0) {
+                page--;
+            } else {
+                clearResultRetry("Use the displayed navigation keys.");
+                continue;
+            }
+            showReturnResultPage(selected, page, starts);
+        }
     }
 
     void showReturnTableHeader(int total, int start, int end) {
-        printLine(tableLine(ConsoleUI.RETURN_TABLE_WIDTH));
+        printLine(tableLine(TerminalUI.RETURN_TABLE_WIDTH));
         printRecord("%-4s | %-8s | %-14s | %-30s | %3s | %-21s", new String[] {"NO.", "RENTAL #", "CUSTOMER", "GAME TITLE", "QTY", "DUE DATE"}, new int[] {4, 8, 14, 30, 3, 21});
-        printLine(tableLine(ConsoleUI.RETURN_TABLE_WIDTH));
+        printLine(tableLine(TerminalUI.RETURN_TABLE_WIDTH));
     }
 
     void showReturnRow(int shown, Rental rental) {
         printRecord("%-4s | %-8s | %-14s | %-30s | %3s | %-21s", new String[] {String.valueOf(shown), rentalLabel(rental.rentalNumber), rental.client.username, rental.game.title,
-                String.valueOf(rental.quantity), rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT)}, new int[] {4, 8, 14, 30, 3, 21});
+                String.valueOf(rental.quantity), rental.dueDate.format(Queue2Play.TABLE_DATE_FORMAT)}, new int[] {4, 8, 14, 30, 3, 21});
     }
 
     void showActiveRentalHeader(int total, int start, int end) {
-        printLine(tableLine(ConsoleUI.ACTIVE_TABLE_WIDTH));
+        printLine(tableLine(TerminalUI.ACTIVE_TABLE_WIDTH));
         printRecord("%-8s | %-14s | %-28s | %-10s | %3s | %-21s | %-10s", new String[] {"RENTAL #", "CUSTOMER", "GAME TITLE", "PLATFORM", "QTY", "DUE DATE", "STATUS"}, new int[] {8, 14, 28, 10, 3, 21, 10});
-        printLine(tableLine(ConsoleUI.ACTIVE_TABLE_WIDTH));
+        printLine(tableLine(TerminalUI.ACTIVE_TABLE_WIDTH));
     }
 
     void showActiveRentalRow(Rental rental) {
         printRecord("%-8s | %-14s | %-28s | %-10s | %3s | %-21s | %-10s", new String[] {rentalLabel(rental.rentalNumber), rental.client.username, rental.game.title, rental.game.platform,
-                String.valueOf(rental.quantity), rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT), rental.status}, new int[] {8, 14, 28, 10, 3, 21, 10});
+                String.valueOf(rental.quantity), rental.dueDate.format(Queue2Play.TABLE_DATE_FORMAT), rental.status}, new int[] {8, 14, 28, 10, 3, 21, 10});
     }
 
     void showOverdueRentalHeader(int total, int start, int end) {
-        printLine(tableLine(ConsoleUI.OVERDUE_TABLE_WIDTH));
+        printLine(tableLine(TerminalUI.OVERDUE_TABLE_WIDTH));
         printRecord("%-8s | %-14s | %-28s | %3s | %-21s | %9s | %9s", new String[] {"RENTAL #", "CUSTOMER", "GAME TITLE", "QTY", "DUE DATE", "DAYS LATE", "LATE FEE"}, new int[] {8, 14, 28, 3, 21, 9, 9});
-        printLine(tableLine(ConsoleUI.OVERDUE_TABLE_WIDTH));
+        printLine(tableLine(TerminalUI.OVERDUE_TABLE_WIDTH));
     }
 
     void showOverdueRentalRow(double lateFee, Rental rental, long daysOverdue) {
         printRecord("%-8s | %-14s | %-28s | %3s | %-21s | %9s | %9s", new String[] {rentalLabel(rental.rentalNumber), rental.client.username, rental.game.title,
-                String.valueOf(rental.quantity), rental.dueDate.format(GameRentalSystem.TABLE_DATE_FORMAT),
+                String.valueOf(rental.quantity), rental.dueDate.format(Queue2Play.TABLE_DATE_FORMAT),
                 String.valueOf(daysOverdue), money(lateFee)}, new int[] {8, 14, 28, 3, 21, 9, 9});
     }
 
     void showEarliestDueRental(Rental top) {
         printLine("Highest Priority: Rental " + rentalLabel(top.rentalNumber)
-            + " | Due: " + top.dueDate.format(GameRentalSystem.DATE_FORMAT));
+            + " | Due: " + top.dueDate.format(Queue2Play.DATE_FORMAT));
     }
 
     void showAuditHeader(int total, int start, int end) {
         printLine(tableLine(AUDIT_TABLE_WIDTH));
         printRecord("%-13s | %-10s | %-58s", new String[] {"DATE", "TIME", "ACTION"}, new int[] {13, 10, 58});
-        printLine(tableLine(ConsoleUI.AUDIT_TABLE_WIDTH));
+        printLine(tableLine(TerminalUI.AUDIT_TABLE_WIDTH));
     }
 
     void showAuditRow(LocalDateTime stamp, String[] parts) {
         printRecord("%-13s | %-10s | %-58s",
-            new String[] {stamp.format(GameRentalSystem.LOG_DISPLAY_DATE),
-                stamp.format(GameRentalSystem.LOG_DISPLAY_TIME), parts[1]}, new int[] {13, 10, 58});
+            new String[] {stamp.format(Queue2Play.LOG_DISPLAY_DATE),
+                stamp.format(Queue2Play.LOG_DISPLAY_TIME), parts[1]}, new int[] {13, 10, 58});
         printLine();
     }
 
@@ -2577,7 +2986,7 @@ public class ConsoleUI {
             "Game          : " + game.title,
             "Platform      : " + platformColor(game.platform),
             "Current Stock : " + game.availableCopies,
-            "Stock Limit   : 0-" + GameRentalSystem.MAX_GAME_STOCK
+            "Stock Limit   : 0-" + Queue2Play.MAX_GAME_STOCK
         });
         showFeatureOptions(new String[] {"[1] Add Stock", "[2] Decrease Stock"});
         showNavigationOptions(new String[] {"[B] Select Game", "[C] Cancel Transaction", "[M] Dashboard"});

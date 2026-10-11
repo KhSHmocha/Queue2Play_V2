@@ -16,7 +16,7 @@ class User {
         this.username = username;
         this.fullName = fullName;
         this.email = email;
-        this.password = Passwords.hash(password);
+        this.password = PasswordSecurity.hash(password);
         this.role = role;
         this.membership = membership;
     }

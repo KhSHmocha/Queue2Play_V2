@@ -51,8 +51,8 @@ public class CheckoutQueue {
 
     static boolean validRequest(RentalRequest request) {
         return request != null && request.client != null && request.game != null && !request.client.isAdmin()
-            && request.queueNumber > 0 && request.quantity >= 1 && request.quantity <= GameRentalSystem.MAX_SAVED_COPIES_PER_GAME
-            && request.rentalDays >= 1 && request.rentalDays <= GameRentalSystem.MAX_RENTAL_DAYS;
+            && request.queueNumber > 0 && request.quantity >= 1 && request.quantity <= Queue2Play.MAX_SAVED_COPIES_PER_GAME
+            && request.rentalDays >= 1 && request.rentalDays <= Queue2Play.MAX_RENTAL_DAYS;
     }
 
     void recordCheckout(RentalRequest request) {
@@ -133,7 +133,7 @@ public class CheckoutQueue {
     int countRequestsForGame(Game game) {
         int count = 0;
         for (Node current = front; current != null; current = current.next) {
-            if (RentalService.sameGame(current.request.game, game)) {
+            if (RentalManager.sameGame(current.request.game, game)) {
                 count++;
             }
         }
@@ -145,7 +145,7 @@ public class CheckoutQueue {
         Node current = front;
         while (current != null) {
             Node next = current.next;
-            if (RentalService.sameGame(current.request.game, game)) {
+            if (RentalManager.sameGame(current.request.game, game)) {
                 unlink(current);
                 removed++;
             }
@@ -156,7 +156,7 @@ public class CheckoutQueue {
 
     boolean hasRequest(User client, Game game) {
         for (Node current = front; current != null; current = current.next) {
-            if (RentalService.sameUser(current.request.client, client) && RentalService.sameGame(current.request.game, game)) {
+            if (RentalManager.sameUser(current.request.client, client) && RentalManager.sameGame(current.request.game, game)) {
                 return true;
             }
         }
@@ -167,7 +167,7 @@ public class CheckoutQueue {
         int copies = 0;
         for (Node current = front; current != null; current = current.next) {
             RentalRequest request = current.request;
-            if (RentalService.sameUser(request.client, client) && RentalService.sameGame(request.game, game)) {
+            if (RentalManager.sameUser(request.client, client) && RentalManager.sameGame(request.game, game)) {
                 copies += request.quantity;
             }
         }
@@ -186,7 +186,7 @@ public class CheckoutQueue {
     ArrayList<RentalRequest> getRequestsOf(User client) {
         ArrayList<RentalRequest> requests = new ArrayList<>();
         for (Node current = front; current != null; current = current.next) {
-            if (RentalService.sameUser(current.request.client, client)) {
+            if (RentalManager.sameUser(current.request.client, client)) {
                 requests.add(current.request);
             }
         }

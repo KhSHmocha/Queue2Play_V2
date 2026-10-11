@@ -11,7 +11,7 @@ public class BehaviorRegressionTest {
     static Path testRoot;
     static ScriptedUI latestUI;
 
-    static class ScriptedUI extends ConsoleUI {
+    static class ScriptedUI extends TerminalUI {
         String[] choices;
         int nextChoice;
         ArrayList<String> screens = new ArrayList<>();
@@ -58,7 +58,7 @@ public class BehaviorRegressionTest {
             super.showReturnRow(shown, rental);
         }
 
-        void showSelectedReturnSummary(ArrayList<Rental> selected, java.time.LocalDateTime returnedAt, RentalService service) {
+        void showSelectedReturnSummary(ArrayList<Rental> selected, java.time.LocalDateTime returnedAt, RentalManager service) {
             for (Rental rental : selected) {
                 confirmedReturns.add(rental.rentalNumber);
             }
@@ -81,7 +81,7 @@ public class BehaviorRegressionTest {
             super.error(message);
         }
 
-        void showCheckoutQueue(CheckoutQueue queue, RentalService service) {
+        void showCheckoutQueue(CheckoutQueue queue, RentalManager service) {
             queueScreens++;
             super.showCheckoutQueue(queue, service);
         }
@@ -100,7 +100,7 @@ public class BehaviorRegressionTest {
             super.showCancelledSlip(request, number);
         }
 
-        void showSessionStatus(GameRentalSystem.CheckoutSession session, CheckoutQueue queue, RentalService service) {
+        void showSessionStatus(Queue2Play.CheckoutSession session, CheckoutQueue queue, RentalManager service) {
             statusBoxes++;
             tapeEvents.add("status");
             super.showSessionStatus(session, queue, service);
@@ -117,19 +117,19 @@ public class BehaviorRegressionTest {
             super.showMessageCard(message);
         }
 
-        void showCheckoutTapeFooter(GameRentalSystem.CheckoutSession session, CheckoutQueue queue, RentalService service) {
+        void showCheckoutTapeFooter(Queue2Play.CheckoutSession session, CheckoutQueue queue, RentalManager service) {
             lastApproved = session.approved;
             lastCancelled = session.cancelled;
             lastTotal = session.total;
             super.showCheckoutTapeFooter(session, queue, service);
         }
 
-        void showCheckoutReceipt(GameRentalSystem.CheckoutSession session, CheckoutQueue queue) {
+        void showCheckoutReceipt(Queue2Play.CheckoutSession session, CheckoutQueue queue) {
             receipts++;
             super.showCheckoutReceipt(session, queue);
         }
 
-        void showCheckoutBatch(ArrayList<RentalRequest> planned, CheckoutQueue queue, RentalService service) {
+        void showCheckoutBatch(ArrayList<RentalRequest> planned, CheckoutQueue queue, RentalManager service) {
             for (RentalRequest request : planned) {
                 batchNumbers.add(request.queueNumber);
             }
@@ -223,7 +223,7 @@ public class BehaviorRegressionTest {
     }
 
     // Simulate a failed second approval while keeping the first real saved checkout.
-    static class FailingApprovalSystem extends GameRentalSystem {
+    static class FailingApprovalSystem extends Queue2Play {
         int attempts;
 
         Rental approveCheckout(RentalRequest request) {
@@ -246,12 +246,12 @@ public class BehaviorRegressionTest {
         }
     }
 
-    static GameRentalSystem freshSystem(String name) {
+    static Queue2Play freshSystem(String name) {
         System.setProperty("q2p.dataDir", testRoot.resolve(name).toString());
-        return new GameRentalSystem();
+        return new Queue2Play();
     }
 
-    static ScriptedUI script(GameRentalSystem system, String[] choices) {
+    static ScriptedUI script(Queue2Play system, String[] choices) {
         ScriptedUI ui = new ScriptedUI(choices);
         system.ui = ui;
         latestUI = ui;
@@ -262,7 +262,7 @@ public class BehaviorRegressionTest {
         return new User(name, "Test Client", name + "@example.com", "TestPassword123", "CLIENT", membership);
     }
 
-    static RentalRequest enqueue(GameRentalSystem system, User user, Game game, int quantity) {
+    static RentalRequest enqueue(Queue2Play system, User user, Game game, int quantity) {
         RentalRequest request = new RentalRequest(system.nextQueueNumber++, user, game);
         request.quantity = quantity;
         request.rentalDays = 3;
@@ -270,66 +270,66 @@ public class BehaviorRegressionTest {
         return request;
     }
 
-    static AccountService accountScript(GameRentalSystem system, AccountUI ui) {
+    static AccountManager accountScript(Queue2Play system, AccountUI ui) {
         latestUI = ui;
-        return new AccountService(system.users, ui, system.dataStore);
+        return new AccountManager(system.users, ui, system.dataStore);
     }
 
     static void accountValidationTests() {
-        check(!AccountService.validRegistrationName(null), "Null name rejected");
-        check(!AccountService.validRegistrationName("A...."), "Name needs two letters");
-        check(!AccountService.validRegistrationName("John"), "Name minimum is five");
-        check(AccountService.validRegistrationName("Al Li"), "Five-character name accepted");
-        check(AccountService.validRegistrationName("A".repeat(60)), "60-character name accepted");
-        check(!AccountService.validRegistrationName("A".repeat(61)), "61-character name rejected");
-        check(AccountService.validRegistrationName("Juan D. Cruz"), "Name accepts spaces and dots");
-        check(AccountService.validRegistrationName("Maria"), "Single name accepted");
-        check(AccountService.validRegistrationName("Jos\u00e9 Cruz"), "Name accepts Unicode letters");
-        check(!AccountService.validRegistrationName("Anne-Marie"), "Name rejects hyphens");
-        check(!AccountService.validRegistrationName("O'Neil"), "Name rejects apostrophes");
-        check(!AccountService.validRegistrationName("Alex2"), "Name rejects digits");
-        check(!AccountService.validRegistrationUsername(null), "Null username rejected");
-        check(!AccountService.validRegistrationUsername("ab"), "Two-character username rejected");
-        check(AccountService.validRegistrationUsername("a12"), "Three-character username accepted");
-        check(AccountService.validRegistrationUsername("a".repeat(20)), "20-character username accepted");
-        check(!AccountService.validRegistrationUsername("a".repeat(21)), "21-character username rejected");
-        check(AccountService.validRegistrationUsername("alex_1.-"), "Username symbols accepted");
-        check(!AccountService.validRegistrationUsername("123"), "Username needs a letter");
-        check(!AccountService.validRegistrationUsername("..."), "Punctuation-only username rejected");
-        check(!AccountService.validRegistrationUsername("a b"), "Username spaces rejected");
-        check(!AccountService.validRegistrationEmail(null), "Null email rejected");
-        check(AccountService.validRegistrationEmail("a.b+tag@example.com"), "Valid email accepted");
-        check(AccountService.validRegistrationEmail("a".repeat(88) + "@example.com"), "100-character email accepted");
-        check(!AccountService.validRegistrationEmail("a".repeat(89) + "@example.com"), "101-character email rejected");
+        check(!AccountManager.validRegistrationName(null), "Null name rejected");
+        check(!AccountManager.validRegistrationName("A...."), "Name needs two letters");
+        check(!AccountManager.validRegistrationName("John"), "Name minimum is five");
+        check(AccountManager.validRegistrationName("Al Li"), "Five-character name accepted");
+        check(AccountManager.validRegistrationName("A".repeat(60)), "60-character name accepted");
+        check(!AccountManager.validRegistrationName("A".repeat(61)), "61-character name rejected");
+        check(AccountManager.validRegistrationName("Juan D. Cruz"), "Name accepts spaces and dots");
+        check(AccountManager.validRegistrationName("Maria"), "Single name accepted");
+        check(AccountManager.validRegistrationName("Jos\u00e9 Cruz"), "Name accepts Unicode letters");
+        check(!AccountManager.validRegistrationName("Anne-Marie"), "Name rejects hyphens");
+        check(!AccountManager.validRegistrationName("O'Neil"), "Name rejects apostrophes");
+        check(!AccountManager.validRegistrationName("Alex2"), "Name rejects digits");
+        check(!AccountManager.validRegistrationUsername(null), "Null username rejected");
+        check(!AccountManager.validRegistrationUsername("ab"), "Two-character username rejected");
+        check(AccountManager.validRegistrationUsername("a12"), "Three-character username accepted");
+        check(AccountManager.validRegistrationUsername("a".repeat(20)), "20-character username accepted");
+        check(!AccountManager.validRegistrationUsername("a".repeat(21)), "21-character username rejected");
+        check(AccountManager.validRegistrationUsername("alex_1.-"), "Username symbols accepted");
+        check(!AccountManager.validRegistrationUsername("123"), "Username needs a letter");
+        check(!AccountManager.validRegistrationUsername("..."), "Punctuation-only username rejected");
+        check(!AccountManager.validRegistrationUsername("a b"), "Username spaces rejected");
+        check(!AccountManager.validRegistrationEmail(null), "Null email rejected");
+        check(AccountManager.validRegistrationEmail("a.b+tag@example.com"), "Valid email accepted");
+        check(AccountManager.validRegistrationEmail("a".repeat(88) + "@example.com"), "100-character email accepted");
+        check(!AccountManager.validRegistrationEmail("a".repeat(89) + "@example.com"), "101-character email rejected");
         String[] badEmails = {"a..b@example.com", ".a@example.com", "a.@example.com", "a@example..com",
                 "a@-example.com", "a@example-.com", "a@@example.com", "a b@example.com", "a@example"};
         for (String email : badEmails) {
-            check(!AccountService.validRegistrationEmail(email), "Malformed email rejected: " + email);
+            check(!AccountManager.validRegistrationEmail(email), "Malformed email rejected: " + email);
         }
-        check(!AccountService.validRegistrationPassword(null), "Null password rejected");
-        check(AccountService.validRegistrationPassword("abcdefgh"), "Letters-only password accepted");
-        check(AccountService.validRegistrationPassword("12345678"), "Digits-only password accepted");
-        check(AccountService.validRegistrationPassword("Abc123!?"), "Mixed password and symbols accepted");
-        check(AccountService.validRegistrationPassword("a".repeat(20)), "20-character password accepted");
+        check(!AccountManager.validRegistrationPassword(null), "Null password rejected");
+        check(AccountManager.validRegistrationPassword("abcdefgh"), "Letters-only password accepted");
+        check(AccountManager.validRegistrationPassword("12345678"), "Digits-only password accepted");
+        check(AccountManager.validRegistrationPassword("Abc123!?"), "Mixed password and symbols accepted");
+        check(AccountManager.validRegistrationPassword("a".repeat(20)), "20-character password accepted");
         String[] badPasswords = {"1234567", "a".repeat(21), "        ", "abc defg", "abcdefgh ",
                 " abcdefgh", "abc\tdefgh", "abc\ndefgh", "abc\u00a0defgh", "abc\u0001defgh", "abc|defgh"};
         for (String password : badPasswords) {
-            check(!AccountService.validRegistrationPassword(password), "Invalid password rejected");
+            check(!AccountManager.validRegistrationPassword(password), "Invalid password rejected");
         }
     }
 
     static void registrationTests() throws Exception {
-        GameRentalSystem system = freshSystem("registration-edit");
+        Queue2Play system = freshSystem("registration-edit");
         AccountUI ui = new AccountUI(new String[] {"  Juan Cruz  ", "  juannew  ", "  juannew@example.com  ",
                 "12345678", "12345678", "E", "1", "Maria Santos", "E", "2", "marianew",
                 "E", "3", "maria@example.com", "E", "4", "abcdefgh", "wrongconfirm", "abcdefgh", "1"});
-        AccountService accounts = accountScript(system, ui);
+        AccountManager accounts = accountScript(system, ui);
         accounts.register();
         check(system.users.size() == 1, "Editing creates just one account");
         User user = system.users.get(0);
         check(user.fullName.equals("Maria Santos") && user.username.equals("marianew")
                 && user.email.equals("maria@example.com"), "Each edit preserves other fields");
-        check(Passwords.matches("abcdefgh", user.password) && !Passwords.matches("12345678", user.password),
+        check(PasswordSecurity.matches("abcdefgh", user.password) && !PasswordSecurity.matches("12345678", user.password),
                 "Edited password replaces the old password only after confirmation");
         check(ui.errors.contains("Passwords do not match. Please try again."), "Password mismatch retries");
         check(user.role.equals("CLIENT") && user.membership.equals("REGULAR"), "New account defaults");
@@ -337,10 +337,10 @@ public class BehaviorRegressionTest {
         String saved = Files.readString(system.dataStore.file("accounts.txt"));
         check(!saved.contains("abcdefgh") && !saved.contains("12345678"), "Account file contains no plaintext passwords");
         check(!Files.readString(system.dataStore.file("logs.txt")).contains("abcdefgh"), "Registration log contains no password");
-        GameRentalSystem reloaded = freshSystem("registration-edit");
+        Queue2Play reloaded = freshSystem("registration-edit");
         reloaded.accountService.loadAccounts();
         User loaded = reloaded.accountService.findUserByLogin("MARIA@EXAMPLE.COM");
-        check(loaded != null && Passwords.matches("abcdefgh", loaded.password), "Registration survives restart");
+        check(loaded != null && PasswordSecurity.matches("abcdefgh", loaded.password), "Registration survives restart");
 
         system = freshSystem("registration-back");
         ui = new AccountUI(new String[] {"  Alex Reyes  ", "alexnew", "alexnew@example.com", "12345678", "12345678",
@@ -349,7 +349,7 @@ public class BehaviorRegressionTest {
         accounts.register();
         user = system.users.get(0);
         check(user.fullName.equals("Alex Reyes") && user.email.equals("alexnew@example.com"), "Back preserves entered fields");
-        check(Passwords.matches("12345678", user.password), "Abandoned password edit preserves confirmed password");
+        check(PasswordSecurity.matches("12345678", user.password), "Abandoned password edit preserves confirmed password");
 
         system = freshSystem("registration-invalid");
         system.users.add(client("taken", "REGULAR"));
@@ -373,18 +373,18 @@ public class BehaviorRegressionTest {
     }
 
     static void legacyAccountTests() {
-        GameRentalSystem system = freshSystem("legacy-accounts");
+        Queue2Play system = freshSystem("legacy-accounts");
         User legacy = new User("...", "Al", ".old@example..com", "old password longer than twenty", "CLIENT", "VIP");
         system.users.add(legacy);
         system.dataStore.saveData();
-        GameRentalSystem loaded = freshSystem("legacy-accounts");
+        Queue2Play loaded = freshSystem("legacy-accounts");
         loaded.accountService.loadAccounts();
         loaded.dataStore.saveData();
         User preserved = loaded.accountService.findUser("...");
         check(preserved != null && preserved.fullName.equals("Al") && preserved.membership.equals("VIP"),
                 "Old account fields remain loadable and saveable");
-        check(Passwords.matches("old password longer than twenty", preserved.password), "Old password rules remain usable");
-        check(Passwords.matches("admin123", loaded.accountService.findUser("admin").password), "Built-in defaults unchanged");
+        check(PasswordSecurity.matches("old password longer than twenty", preserved.password), "Old password rules remain usable");
+        check(PasswordSecurity.matches("admin123", loaded.accountService.findUser("admin").password), "Built-in defaults unchanged");
         system = freshSystem("legacy-long-accounts");
         User longFields = new User("u".repeat(32), "N".repeat(100), "e".repeat(200) + "@example.com",
                 "OldPassword123", "CLIENT", "REGULAR");
@@ -456,11 +456,11 @@ public class BehaviorRegressionTest {
     }
 
     static void loginTests() throws Exception {
-        GameRentalSystem system = freshSystem("login-attempts");
+        Queue2Play system = freshSystem("login-attempts");
         User user = client("signin", "REGULAR");
         system.users.add(user);
         AccountUI ui = new AccountUI(new String[] {"  SIGNIN@EXAMPLE.COM  ", "TestPassword123"});
-        AccountService accounts = accountScript(system, ui);
+        AccountManager accounts = accountScript(system, ui);
         check(accounts.login() == user, "Email login trims spaces and ignores case");
         check(ui.loginIdentifiers.get(0).equals("SIGNIN@EXAMPLE.COM"), "Password screen uses supplied identifier");
         ui.useChoices(new String[] {"  SIGNIN  ", "testpassword123", "0"});
@@ -507,7 +507,7 @@ public class BehaviorRegressionTest {
     }
 
     static void navigationFlowTests() {
-        GameRentalSystem system = freshSystem("navigation-flow");
+        Queue2Play system = freshSystem("navigation-flow");
         User customer = client("navclient", "REGULAR");
         ScriptedUI ui = script(system, new String[] {"bad", "b"});
         system.viewActiveRentals();
@@ -659,7 +659,7 @@ public class BehaviorRegressionTest {
             output.reset();
             ui.clearScreen();
             ui.showGameNavigation(0, 1, "");
-            ui.inputBar("ENTER CHOICE", ConsoleUI.GAME_TABLE_WIDTH);
+            ui.inputBar("ENTER CHOICE", TerminalUI.GAME_TABLE_WIDTH);
             ui.info("");
             text = output.toString("UTF-8");
             check(text.contains("[B] Select Platform") && text.contains("[M] Dashboard")
@@ -717,7 +717,7 @@ public class BehaviorRegressionTest {
         System.setOut(new PrintStream(output, true, "UTF-8"));
         System.setProperty("q2p.width", "120");
         try {
-            ConsoleUI ui = new ConsoleUI();
+            TerminalUI ui = new TerminalUI();
             LinkedHashMap<Game, Integer> cart = new LinkedHashMap<>();
             cart.put(new Game("P001", "First", "PS5", 2, 3), 2);
             cart.put(new Game("X001", "Second", "Xbox", 2, 3), 1);
@@ -767,7 +767,7 @@ public class BehaviorRegressionTest {
             }
             for (int width : new int[] {81, 60, 40}) {
                 System.setProperty("q2p.width", String.valueOf(width));
-                ui = new ConsoleUI();
+                ui = new TerminalUI();
                 output.reset();
                 ui.showGameNavigation(0, 2, "First", true, true, 9);
                 ui.inputBar("ENTER CHOICE", 93);
@@ -838,7 +838,7 @@ public class BehaviorRegressionTest {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         System.setOut(new PrintStream(output, true, "UTF-8"));
         try {
-            ConsoleUI ui = new ConsoleUI();
+            TerminalUI ui = new TerminalUI();
             ui.showMainMenu();
             checkVerticalMenu(output.toString("UTF-8"), new String[] {"[1] Login", "[2] Register"});
             output.reset();
@@ -877,7 +877,7 @@ public class BehaviorRegressionTest {
     }
 
     static void catalogTests() {
-        GameRentalSystem system = freshSystem("catalog");
+        Queue2Play system = freshSystem("catalog");
         system.gameCatalog.loadStartingGames();
         ArrayList<Game> all = system.gameCatalog.getGameList("ALL");
         check(system.gameCatalog.linearSearch(all, "p001").size() == 1, "Exact ID ignores case");
@@ -924,7 +924,7 @@ public class BehaviorRegressionTest {
     }
 
     static void orderTests() {
-        GameRentalSystem system = freshSystem("order");
+        Queue2Play system = freshSystem("order");
         system.gameCatalog.loadStartingGames();
         User regular = client("regular", "REGULAR");
         system.users.add(regular);
@@ -954,7 +954,7 @@ public class BehaviorRegressionTest {
         check(system.chooseRentalDays() == 30, "Custom duration rejects invalid inputs and accepts 30");
         script(system, new String[] {"4", "1"});
         check(system.chooseRentalDays() == 1, "Custom duration accepts 1");
-        GameRentalSystem cancelled = freshSystem("cancelled-order");
+        Queue2Play cancelled = freshSystem("cancelled-order");
         cancelled.gameCatalog.loadStartingGames();
         script(cancelled, new String[] {"1", "1", "1", "N", "1", "C", "Y"});
         cancelled.placeInQueue(regular);
@@ -963,7 +963,7 @@ public class BehaviorRegressionTest {
     }
 
     static void orderStockTests() {
-        GameRentalSystem system = freshSystem("stock-order");
+        Queue2Play system = freshSystem("stock-order");
         User regular = client("stockclient", "REGULAR");
         system.users.add(regular);
         Game game = system.gameCatalog.addGame("Limited Stock", "PS5", 5, 3);
@@ -992,7 +992,7 @@ public class BehaviorRegressionTest {
         check(system.rentalService.validateCart(other, cart) == null, "Another client can request the same game");
 
         system.dataStore.saveData();
-        GameRentalSystem loaded = freshSystem("stock-order");
+        Queue2Play loaded = freshSystem("stock-order");
         loaded.accountService.loadAccounts();
         loaded.dataStore.loadGames();
         loaded.dataStore.loadQueue();
@@ -1036,7 +1036,7 @@ public class BehaviorRegressionTest {
     }
 
     static void repeatQueueTests() throws Exception {
-        GameRentalSystem system = freshSystem("repeat-orders");
+        Queue2Play system = freshSystem("repeat-orders");
         User regular = client("repeatclient", "REGULAR");
         system.users.add(regular);
         Game game = system.gameCatalog.addGame("Spider-Man 2", "PS5", 5, 5);
@@ -1059,7 +1059,7 @@ public class BehaviorRegressionTest {
         check(ui.errors.size() == 1 && ui.errors.get(0).contains("maximum of 3")
             && system.nextQueueNumber == 4, "Fourth one-copy order is blocked before quantity input");
         system.dataStore.saveData();
-        GameRentalSystem loaded = freshSystem("repeat-orders");
+        Queue2Play loaded = freshSystem("repeat-orders");
         loaded.accountService.loadAccounts();
         loaded.dataStore.loadGames();
         loaded.dataStore.loadQueue();
@@ -1073,7 +1073,7 @@ public class BehaviorRegressionTest {
         check(loaded.rentalService.activeCopies(loadedClient, loadedGame) == 1
             && loaded.checkoutQueue.queuedCopies(loadedClient, loadedGame) == 2 && loadedGame.availableCopies == 4,
             "First repeat checkout creates one rental and leaves two requests waiting");
-        GameRentalSystem partial = freshSystem("repeat-orders");
+        Queue2Play partial = freshSystem("repeat-orders");
         partial.accountService.loadAccounts();
         partial.dataStore.loadGames();
         partial.dataStore.loadRentals();
@@ -1087,7 +1087,7 @@ public class BehaviorRegressionTest {
         check(ui.lastApproved == 2 && partial.checkoutQueue.isEmpty() && partialGame.availableCopies == 2
             && partial.rentalService.activeCopies(partialClient, partialGame) == 3,
             "Remaining repeat requests checkout to three active copies");
-        GameRentalSystem completed = freshSystem("repeat-orders");
+        Queue2Play completed = freshSystem("repeat-orders");
         completed.accountService.loadAccounts();
         completed.dataStore.loadGames();
         completed.dataStore.loadRentals();
@@ -1127,7 +1127,7 @@ public class BehaviorRegressionTest {
             "Save rejects more than five outstanding copies and preserves the saved queue");
         Files.writeString(system.dataStore.file("queue.txt"), savedQueue
             + "3|repeatclient|" + game.gameId + "|false|3|3\n");
-        GameRentalSystem invalidData = freshSystem("cancel-repeat");
+        Queue2Play invalidData = freshSystem("cancel-repeat");
         invalidData.accountService.loadAccounts();
         invalidData.dataStore.loadGames();
         boolean refusedLoad = false;
@@ -1140,13 +1140,13 @@ public class BehaviorRegressionTest {
     }
 
     static void legacyQuantityTests() {
-        GameRentalSystem system = freshSystem("legacy-quantity");
+        Queue2Play system = freshSystem("legacy-quantity");
         User regular = client("legacyclient", "REGULAR");
         system.users.add(regular);
         Game game = system.gameCatalog.addGame("Older Order", "PS5", 5, 5);
         enqueue(system, regular, game, 5);
         system.dataStore.saveData();
-        GameRentalSystem loaded = freshSystem("legacy-quantity");
+        Queue2Play loaded = freshSystem("legacy-quantity");
         loaded.accountService.loadAccounts();
         loaded.dataStore.loadGames();
         loaded.dataStore.loadQueue();
@@ -1160,7 +1160,7 @@ public class BehaviorRegressionTest {
         loaded.checkoutManagement();
         check(loaded.allRentals.size() == 1 && loaded.allRentals.get(0).quantity == 5 && loaded.checkoutQueue.isEmpty(),
             "Older accepted request can still checkout with its original quantity");
-        GameRentalSystem active = freshSystem("legacy-quantity");
+        Queue2Play active = freshSystem("legacy-quantity");
         active.accountService.loadAccounts();
         active.dataStore.loadGames();
         active.dataStore.loadRentals();
@@ -1169,7 +1169,7 @@ public class BehaviorRegressionTest {
         Rental rental = active.allRentals.get(0);
         active.rentalService.completeReturn(rental, rental.checkoutDate.plusDays(1));
         active.dataStore.saveData();
-        GameRentalSystem history = freshSystem("legacy-quantity");
+        Queue2Play history = freshSystem("legacy-quantity");
         history.accountService.loadAccounts();
         history.dataStore.loadGames();
         history.dataStore.loadRentals();
@@ -1177,8 +1177,41 @@ public class BehaviorRegressionTest {
             "Older completed rental history keeps its original quantity");
     }
 
+    static void checkReceiptWaiting(Queue2Play system, int expectedWaiting) throws Exception {
+        ArrayList<RentalRequest> original = system.checkoutQueue.getRequests();
+        int streak = system.checkoutQueue.vipStreak;
+        ArrayList<Game> games = new ArrayList<>(system.games.values());
+        int[] stocks = new int[games.size()];
+        for (int i = 0; i < games.size(); i++) {
+            stocks[i] = games.get(i).availableCopies;
+        }
+        PrintStream previous = System.out;
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(output, true, "UTF-8"));
+        try {
+            TerminalUI ui = new TerminalUI();
+            ui.showCheckoutQueue(system.checkoutQueue, system.rentalService);
+            check(output.toString("UTF-8").contains("QUEUE " + original.size() + "  READY "
+                    + (original.size() - expectedWaiting) + "  WAITING " + expectedWaiting),
+                    "Admin queue shows the expected shared-stock counts");
+            output.reset();
+            ui.showCheckoutReceipt(new Queue2Play.CheckoutSession("admin"), system.checkoutQueue);
+            ui.finishScreen(TerminalUI.CHECKOUT_QUEUE_TABLE_WIDTH);
+            check(output.toString("UTF-8").contains("Left in queue: " + original.size()
+                    + " (" + expectedWaiting + " waiting)"),
+                    "Receipt waiting count agrees with the admin queue and customer positions");
+        } finally {
+            System.setOut(previous);
+        }
+        check(system.checkoutQueue.getRequests().equals(original) && system.checkoutQueue.vipStreak == streak,
+                "Receipt rendering leaves queue order and VIP streak unchanged");
+        for (int i = 0; i < games.size(); i++) {
+            check(games.get(i).availableCopies == stocks[i], "Receipt rendering leaves real stock unchanged");
+        }
+    }
+
     static void predictedQueueTests() throws Exception {
-        GameRentalSystem system = freshSystem("predicted-queue");
+        Queue2Play system = freshSystem("predicted-queue");
         User vip = client("positionvip", "VIP");
         User regular = client("positionreg", "REGULAR");
         system.users.add(vip);
@@ -1224,7 +1257,7 @@ public class BehaviorRegressionTest {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         System.setOut(new PrintStream(output, true, "UTF-8"));
         try {
-            ConsoleUI ui = new ConsoleUI();
+            TerminalUI ui = new TerminalUI();
             ui.showCheckoutQueue(system.checkoutQueue, system.rentalService);
             String drawing = output.toString("UTF-8");
             int[] displayed = {1, 3, 4, 5, 2};
@@ -1280,20 +1313,26 @@ public class BehaviorRegressionTest {
         check(ready.size() == 1 && ready.get(0) == firstRequest, "Preview accounts for stock consumed by earlier requests");
         check(system.checkoutQueue.getPosition(secondRequest) == 0 && shared.availableCopies == 3,
                 "Shared-stock shortage waits without reserving real stock");
+        checkReceiptWaiting(system, 1);
         system.checkoutQueue.vipStreak = 3;
         check(system.checkoutQueue.getPosition(secondRequest) == 1 && system.checkoutQueue.getPosition(firstRequest) == 0,
                 "Fairness can change which shared-stock request is ready");
+        checkReceiptWaiting(system, 1);
         system.checkoutQueue.vipStreak = 0;
         rental = system.rentalService.checkout(firstRequest, system.nextRentalNumber++);
         check(system.checkoutQueue.getPosition(secondRequest) == 0, "Request remains waiting after stock deduction");
+        checkReceiptWaiting(system, 1);
         system.rentalService.completeReturn(rental, rental.checkoutDate.plusDays(1));
         check(system.checkoutQueue.getPosition(secondRequest) == 1 && shared.availableCopies == 3,
                 "Returned stock makes waiting request ready");
+        checkReceiptWaiting(system, 0);
         secondRequest.game.availableCopies = 0;
         check(system.checkoutQueue.previewReadyRequests().isEmpty(), "All waiting queue has no positions");
+        checkReceiptWaiting(system, 1);
         system.checkoutQueue.clear();
         check(system.checkoutQueue.previewReadyRequests().isEmpty()
                 && system.checkoutQueue.getDisplayRequests(new ArrayList<RentalRequest>()).isEmpty(), "Empty display queue works");
+        checkReceiptWaiting(system, 0);
 
         system = freshSystem("submitted-positions");
         vip = client("submittedvip", "VIP");
@@ -1310,8 +1349,8 @@ public class BehaviorRegressionTest {
                 "Order Submitted shows the same processing position as admin and My Queue");
     }
 
-    static GameRentalSystem returnSystem(String name, int count) {
-        GameRentalSystem system = freshSystem(name);
+    static Queue2Play returnSystem(String name, int count) {
+        Queue2Play system = freshSystem(name);
         User user = client("returnclient", "REGULAR");
         system.users.add(user);
         java.time.LocalDateTime now = java.time.LocalDateTime.now();
@@ -1330,7 +1369,7 @@ public class BehaviorRegressionTest {
     }
 
     static void returnTests() throws Exception {
-        GameRentalSystem system = returnSystem("return-selection", 11);
+        Queue2Play system = returnSystem("return-selection", 11);
         ArrayList<Rental> sorted = system.rentalService.getRentalsByDueDate();
         check(sorted.get(0).rentalNumber == 11 && sorted.get(10).rentalNumber == 1, "Return list starts with earliest due date");
         ScriptedUI ui = script(system, new String[] {});
@@ -1374,7 +1413,7 @@ public class BehaviorRegressionTest {
             check(rental.lateFee == system.rentalService.calculateLateFee(rental, rental.daysLate), "Each rental uses the original late fee formula");
         }
         check(sorted.get(0).returnDate.equals(sorted.get(2).returnDate), "Batch shares one confirmed return timestamp");
-        GameRentalSystem loaded = freshSystem("return-batch");
+        Queue2Play loaded = freshSystem("return-batch");
         loaded.accountService.loadAccounts();
         loaded.dataStore.loadGames();
         loaded.dataStore.loadRentals();
@@ -1444,7 +1483,7 @@ public class BehaviorRegressionTest {
         ByteArrayOutputStream drawing = new ByteArrayOutputStream();
         System.setOut(new PrintStream(drawing, true, "UTF-8"));
         try {
-            ConsoleUI console = new ConsoleUI();
+            TerminalUI console = new TerminalUI();
             console.showReturnSelectionList(selected, 0, 2, 0, 1, "");
             console.info("");
             console.showSelectedReturnSummary(selected, java.time.LocalDateTime.now(), system.rentalService);
@@ -1452,10 +1491,10 @@ public class BehaviorRegressionTest {
         } finally {
             System.setOut(previous);
         }
-        String plain = positionedDrawing(drawing, ConsoleUI.RETURN_TABLE_WIDTH);
+        String plain = positionedDrawing(drawing, TerminalUI.RETURN_TABLE_WIDTH);
         for (String line : plain.split("\\R")) {
             if (line.contains(" | ") && (line.contains("#00") || line.contains("LATE FEE") || line.contains("NO."))) {
-                check(line.length() == ConsoleUI.RETURN_TABLE_WIDTH, "Return table rows retain the 95-column width");
+                check(line.length() == TerminalUI.RETURN_TABLE_WIDTH, "Return table rows retain the 95-column width");
             }
         }
         check(plain.contains("EARLIEST DUE DATE FIRST") && plain.contains("RENTAL #") && plain.contains("LATE FEE")
@@ -1463,7 +1502,7 @@ public class BehaviorRegressionTest {
     }
 
     static void queueTests() {
-        GameRentalSystem system = freshSystem("queue");
+        Queue2Play system = freshSystem("queue");
         User vip = client("vipclient", "VIP");
         User regular = client("regclient", "REGULAR");
         system.users.add(vip);
@@ -1508,7 +1547,7 @@ public class BehaviorRegressionTest {
             "Cancel any waiting request from shared queue screen. Errors: " + cancellationUI.errors);
         check(system.checkoutQueue.vipStreak == 0, "Declined approval and cancellation do not count as checkout");
         check(system.isDashboardReturnRequested(), "Queue screen supports M");
-        GameRentalSystem loaded = freshSystem("queue");
+        Queue2Play loaded = freshSystem("queue");
         loaded.accountService.loadAccounts();
         loaded.dataStore.loadGames();
         loaded.dataStore.loadRentals();
@@ -1536,8 +1575,8 @@ public class BehaviorRegressionTest {
         check(queue.vipStreak == 3, "Viewing next request does not change streak");
     }
 
-    static GameRentalSystem sessionSystem(String name) {
-        GameRentalSystem system = freshSystem(name);
+    static Queue2Play sessionSystem(String name) {
+        Queue2Play system = freshSystem(name);
         User vip = client("vipone", "VIP");
         User regular = client("regularone", "REGULAR");
         system.users.add(vip);
@@ -1555,7 +1594,7 @@ public class BehaviorRegressionTest {
     }
 
     static void gameEditingTests() throws Exception {
-        GameRentalSystem system = freshSystem("game-field-editing");
+        Queue2Play system = freshSystem("game-field-editing");
         ScriptedUI ui = script(system, new String[] {"Draft Game", "1", "5", "3",
                 "E", "3", "NaN", "B", "E", "3", "6", "E", "4", "0", "B",
                 "E", "4", "4", "E", "1", "Edited Game", "E", "2", "2",
@@ -1568,7 +1607,7 @@ public class BehaviorRegressionTest {
         check(ui.gameDrafts.get(1).equals("Draft Game:PS5:5.0:3"), "Invalid price followed by Back keeps the original draft");
         check(ui.gameDrafts.contains("Draft Game:PS5:6.0:3"), "Invalid copies followed by Back preserves valid price and original copies");
         check(ui.gameDrafts.contains("Edited Game:Xbox:6.0:4"), "Field editing returns directly to the complete summary");
-        GameRentalSystem loaded = freshSystem("game-field-editing");
+        Queue2Play loaded = freshSystem("game-field-editing");
         loaded.dataStore.loadGames();
         check(loaded.games.get("X001").title.equals("Edited Game") && loaded.games.get("X001").price == 6,
                 "Edited game values survive save and reload");
@@ -1600,7 +1639,7 @@ public class BehaviorRegressionTest {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         System.setOut(new PrintStream(output, true, "UTF-8"));
         try {
-            ConsoleUI ui = new ConsoleUI();
+            TerminalUI ui = new TerminalUI();
             ui.printHeader("CATEGORY TEST");
             ui.showNewGameConfirmation("Draft", "PS5", 5, 3);
             ui.inputBar("ENTER CHOICE");
@@ -1635,7 +1674,7 @@ public class BehaviorRegressionTest {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         System.setOut(new PrintStream(output, true, "UTF-8"));
         try {
-            GameRentalSystem system = freshSystem("result-order");
+            Queue2Play system = freshSystem("result-order");
             system.gameCatalog.loadStartingGames();
             User customer = client("resultclient", "REGULAR");
             system.users.add(customer);
@@ -1710,7 +1749,7 @@ public class BehaviorRegressionTest {
     }
 
     static void receiptNavigationTests() {
-        GameRentalSystem system = freshSystem("empty-receipt-navigation");
+        Queue2Play system = freshSystem("empty-receipt-navigation");
         ScriptedUI ui = script(system, new String[] {"R", "bad", "B", "B"});
         system.checkoutManagement();
         check(ui.screensAtInput.get(1).equals("1:1") && ui.screensAtInput.get(2).equals("1:1"),
@@ -1734,7 +1773,7 @@ public class BehaviorRegressionTest {
     }
 
     static void checkoutSessionTests() throws Exception {
-        GameRentalSystem system = sessionSystem("batch-session");
+        Queue2Play system = sessionSystem("batch-session");
         ArrayList<RentalRequest> before = system.checkoutQueue.getRequests();
         ArrayList<RentalRequest> planned = system.previewReadyCheckouts();
         int[] expected = {2, 3, 4, 1, 5};
@@ -1809,7 +1848,7 @@ public class BehaviorRegressionTest {
         invalid.client.rentalHistory.push(active);
         system.nextRentalNumber = 2;
         // Call the batch coordinator directly: this deliberately inconsistent fixture must not be saved.
-        GameRentalSystem.CheckoutSession session = new GameRentalSystem.CheckoutSession("admin");
+        Queue2Play.CheckoutSession session = new Queue2Play.CheckoutSession("admin");
         ui = script(system, new String[] {"Y"});
         system.checkoutQueue.remove(system.checkoutQueue.findByNumber(2));
         system.approveReadyBatch(session);
@@ -1833,7 +1872,7 @@ public class BehaviorRegressionTest {
             "Mid-batch failure retains earlier tape line and session total");
         check(failure.checkoutQueue.getRequests().size() == 2 && ui.errors.get(0).contains("#002"),
             "Failed and later requests stay queued; error names failed request");
-        GameRentalSystem reloaded = freshSystem("partial-batch");
+        Queue2Play reloaded = freshSystem("partial-batch");
         reloaded.accountService.loadAccounts();
         reloaded.dataStore.loadGames();
         reloaded.dataStore.loadRentals();
@@ -1843,8 +1882,8 @@ public class BehaviorRegressionTest {
     }
 
     static void checkoutLayoutTests() throws Exception {
-        GameRentalSystem system = sessionSystem("layout-session");
-        ConsoleUI ui = new ConsoleUI();
+        Queue2Play system = sessionSystem("layout-session");
+        TerminalUI ui = new TerminalUI();
         RentalRequest ready = system.checkoutQueue.findByNumber(1);
         RentalRequest waiting = system.checkoutQueue.findByNumber(6);
         check(ui.checkoutStatus(ready).equals("READY") && ui.checkoutStock(ready).equals("3→1"),
@@ -1864,7 +1903,7 @@ public class BehaviorRegressionTest {
         System.setOut(new PrintStream(drawing, true, "UTF-8"));
         try {
             ui.showCheckoutQueue(system.checkoutQueue, system.rentalService);
-            GameRentalSystem.CheckoutSession session = new GameRentalSystem.CheckoutSession("testadmin");
+            Queue2Play.CheckoutSession session = new Queue2Play.CheckoutSession("testadmin");
             Rental rental = new Rental(1, ready.client, ready.game, java.time.LocalDateTime.now(),
                 java.time.LocalDateTime.now().plusDays(3), 5);
             session.addRental(rental);
@@ -1931,7 +1970,7 @@ public class BehaviorRegressionTest {
     }
 
     static void tapeFlowTests() {
-        GameRentalSystem system = freshSystem("blocked-tape");
+        Queue2Play system = freshSystem("blocked-tape");
         User regular = client("blockedclient", "REGULAR");
         system.users.add(regular);
         Game game = system.gameCatalog.addGame("Blocked", "PS5", 5, 0);
@@ -1984,7 +2023,7 @@ public class BehaviorRegressionTest {
     }
 
     static void confirmQuestionTests() throws Exception {
-        GameRentalSystem system = sessionSystem("confirm-layout");
+        Queue2Play system = sessionSystem("confirm-layout");
         RentalRequest request = system.checkoutQueue.findByNumber(1);
         request.client.username = "alex";
         request.game.title = "Mario Kart 8";
@@ -2107,10 +2146,10 @@ public class BehaviorRegressionTest {
             System.setProperty("q2p.ansi", "true");
             for (int terminalWidth : widths) {
                 System.setProperty("q2p.width", String.valueOf(terminalWidth));
-                ConsoleUI ui = new ConsoleUI();
+                TerminalUI ui = new TerminalUI();
                 ByteArrayOutputStream drawing = new ByteArrayOutputStream();
                 System.setOut(new PrintStream(drawing, true, "UTF-8"));
-                int screenWidth = Math.min(ConsoleUI.STANDARD_WIDTH, terminalWidth);
+                int screenWidth = Math.min(TerminalUI.STANDARD_WIDTH, terminalWidth);
                 ui.printHeader("POSITION TEST", screenWidth);
                 ui.inputBar("ENTER CHOICE", screenWidth, "[0] Back");
                 ui.info(ui.prompt(screenWidth));
@@ -2151,7 +2190,7 @@ public class BehaviorRegressionTest {
                 }
             }
             System.setProperty("q2p.ansi", "false");
-            ConsoleUI ui = new ConsoleUI();
+            TerminalUI ui = new TerminalUI();
             ByteArrayOutputStream drawing = new ByteArrayOutputStream();
             System.setOut(new PrintStream(drawing, true, "UTF-8"));
             ui.printHeader("PLAIN OUTPUT", 40);
@@ -2180,7 +2219,7 @@ public class BehaviorRegressionTest {
         ByteArrayOutputStream drawing = new ByteArrayOutputStream();
         try {
             System.setIn(new java.io.ByteArrayInputStream(new byte[0]));
-            ConsoleUI ui = new ConsoleUI();
+            TerminalUI ui = new TerminalUI();
             System.setOut(new PrintStream(drawing, true, "UTF-8"));
             ui.inputBar("RESULT", 81, "Order complete.");
             ui.finishScreen(81);
@@ -2216,7 +2255,7 @@ public class BehaviorRegressionTest {
         try {
             System.setProperty("q2p.width", "120");
             System.setProperty("q2p.height", "36");
-            ConsoleUI ui = new ConsoleUI();
+            TerminalUI ui = new TerminalUI();
             ArrayList<Game> games = new ArrayList<>();
             for (int i = 0; i < 12; i++) {
                 games.add(new Game("P" + (100 + i), "Game " + i, "PS5", 5, 3));
@@ -2224,11 +2263,11 @@ public class BehaviorRegressionTest {
             ArrayList<Integer> starts = ui.gamePages(games);
             check(starts.get(1) == 7, "Short terminals show fewer than nine catalog games");
             System.setProperty("q2p.height", "60");
-            ui = new ConsoleUI();
+            ui = new TerminalUI();
             starts = ui.gamePages(games);
             check(starts.get(1) == 9, "Tall terminals still cap the catalog at nine games");
             System.setProperty("q2p.height", "36");
-            ui = new ConsoleUI();
+            ui = new TerminalUI();
             String title = "A longer game title with several words that continue neatly in the title column ENDMARK";
             for (Game game : games) {
                 game.title = title;
@@ -2239,7 +2278,7 @@ public class BehaviorRegressionTest {
                 output.reset();
                 int start = starts.get(page);
                 int end = starts.get(page + 1);
-                ui.printHeader("RENT GAMES", ConsoleUI.GAME_TABLE_WIDTH);
+                ui.printHeader("RENT GAMES", TerminalUI.GAME_TABLE_WIDTH);
                 LinkedHashMap<Game, Integer> cart = new LinkedHashMap<>();
                 cart.put(games.get(0), 1);
                 ui.showCatalogState("longer", 0, page + 1, starts.size() - 1, cart);
@@ -2247,11 +2286,11 @@ public class BehaviorRegressionTest {
                 for (int i = start; i < end; i++) {
                     ui.showGameRow(i - start + 1, games.get(i));
                 }
-                ui.info(ui.tableLine(ConsoleUI.GAME_TABLE_WIDTH));
+                ui.info(ui.tableLine(TerminalUI.GAME_TABLE_WIDTH));
                 ui.showGameNavigation(page, starts.size() - 1, "longer", true, true, end - start);
-                ui.inputBar("ENTER CHOICE", ConsoleUI.GAME_TABLE_WIDTH);
-                ui.info(ui.prompt(ConsoleUI.GAME_TABLE_WIDTH));
-                String plain = positionedDrawing(output, ConsoleUI.GAME_TABLE_WIDTH);
+                ui.inputBar("ENTER CHOICE", TerminalUI.GAME_TABLE_WIDTH);
+                ui.info(ui.prompt(TerminalUI.GAME_TABLE_WIDTH));
+                String plain = positionedDrawing(output, TerminalUI.GAME_TABLE_WIDTH);
                 check(plain.split("\\R").length <= 36, "Complete catalog page reserves room for choices and prompt");
                 check(plain.contains("ENDMARK") && !plain.contains("..."), "Whole wrapped titles remain visible on their page");
                 check(plain.contains("[N]") == (page < starts.size() - 2), "Only usable Next keys appear");
@@ -2264,42 +2303,42 @@ public class BehaviorRegressionTest {
             ArrayList<Integer> logStarts = ui.auditPages(logs);
             check(logStarts.get(1) < 8, "Long logs use complete-record pages");
             output.reset();
-            ui.printHeader("ADMIN AUDIT LOG", ConsoleUI.AUDIT_TABLE_WIDTH);
+            ui.printHeader("ADMIN AUDIT LOG", TerminalUI.AUDIT_TABLE_WIDTH);
             ui.showListStatus("Most recent first · Page: 1/" + (logStarts.size() - 1),
-                "Showing 1-" + logStarts.get(1), ConsoleUI.AUDIT_TABLE_WIDTH);
+                "Showing 1-" + logStarts.get(1), TerminalUI.AUDIT_TABLE_WIDTH);
             ui.showAuditHeader(logs.size(), 0, logStarts.get(1));
             for (int i = 0; i < logStarts.get(1); i++) {
                 ui.showAuditRow(java.time.LocalDateTime.of(2026, 10, 11, 0, 31), logs.get(i).split("\\|", 2));
             }
-            ui.info(ui.tableLine(ConsoleUI.AUDIT_TABLE_WIDTH));
+            ui.info(ui.tableLine(TerminalUI.AUDIT_TABLE_WIDTH));
             ui.showPagination(0, logStarts.size() - 1);
             ui.showBackToDashboard();
-            ui.inputBar("ENTER CHOICE", ConsoleUI.AUDIT_TABLE_WIDTH);
-            ui.info(ui.prompt(ConsoleUI.AUDIT_TABLE_WIDTH));
-            check(positionedDrawing(output, ConsoleUI.AUDIT_TABLE_WIDTH).split("\\R").length <= 36,
+            ui.inputBar("ENTER CHOICE", TerminalUI.AUDIT_TABLE_WIDTH);
+            ui.info(ui.prompt(TerminalUI.AUDIT_TABLE_WIDTH));
+            check(positionedDrawing(output, TerminalUI.AUDIT_TABLE_WIDTH).split("\\R").length <= 36,
                 "Wrapped log pages fit the terminal including navigation");
 
             output.reset();
-            GameRentalSystem queueSystem = freshSystem("checkout-page-height");
+            Queue2Play queueSystem = freshSystem("checkout-page-height");
             User queueUser = client("heightclient", "REGULAR");
             for (int i = 0; i < 12; i++) {
                 Game game = queueSystem.gameCatalog.addGame("Height Game " + i, "PS5", 5, 3);
                 enqueue(queueSystem, queueUser, game, 1);
             }
             ui.showCheckoutQueue(queueSystem.checkoutQueue, queueSystem.rentalService);
-            ui.info(ui.prompt(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH));
-            check(positionedDrawing(output, ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH).split("\\R").length <= 36,
+            ui.info(ui.prompt(TerminalUI.CHECKOUT_QUEUE_TABLE_WIDTH));
+            check(positionedDrawing(output, TerminalUI.CHECKOUT_QUEUE_TABLE_WIDTH).split("\\R").length <= 36,
                 "Admin queue reserves space for its status, grouped choices and prompt");
             ui.endCheckoutDisplay();
 
             System.setProperty("q2p.width", "60");
             System.setProperty("q2p.height", "50");
-            ui = new ConsoleUI();
+            ui = new TerminalUI();
             output.reset();
-            ui.printHeader("GAMES", ConsoleUI.GAME_TABLE_WIDTH);
+            ui.printHeader("GAMES", TerminalUI.GAME_TABLE_WIDTH);
             ui.showGameTableHeader(1, 0, 1);
             ui.showGameRow(1, games.get(0));
-            ui.info(ui.tableLine(ConsoleUI.GAME_TABLE_WIDTH));
+            ui.info(ui.tableLine(TerminalUI.GAME_TABLE_WIDTH));
             String plain = positionedDrawing(output, 60);
             for (String line : plain.split("\\R")) {
                 check(line.length() <= 60, "Narrow tables keep their columns within the terminal");
@@ -2349,7 +2388,7 @@ public class BehaviorRegressionTest {
     }
 
     static void discardConfirmationTests() throws Exception {
-        GameRentalSystem system = freshSystem("retain-add-game");
+        Queue2Play system = freshSystem("retain-add-game");
         ScriptedUI ui = script(system, new String[] {"Retained Draft", "1", "5", "3",
             "E", "3", "C", "bad", "N", "6", "M", "N", "1", "N"});
         system.addGame();
@@ -2399,7 +2438,7 @@ public class BehaviorRegressionTest {
         String previousHeight = System.getProperty("q2p.height");
         System.setProperty("q2p.height", "36");
         try {
-            GameRentalSystem system = freshSystem("queue-pages-only");
+            Queue2Play system = freshSystem("queue-pages-only");
             User user = client("queueclient", "REGULAR");
             system.users.add(user);
             for (int i = 0; i < 12; i++) {
@@ -2427,12 +2466,332 @@ public class BehaviorRegressionTest {
         }
     }
 
+    // Capture the screen at each input, including the prompt and navigation.
+    static class PageUI extends ScriptedUI {
+        ByteArrayOutputStream frame;
+        ArrayList<String> frames = new ArrayList<>();
+
+        PageUI(String[] choices, ByteArrayOutputStream frame) {
+            super(choices);
+            this.frame = frame;
+            readResultNavigation = true;
+        }
+
+        void clearScreen() {
+            super.clearScreen();
+            if (frame != null) {
+                frame.reset();
+            }
+        }
+
+        String readText(String prompt) {
+            System.out.print(prompt);
+            frames.add(frame.toString(java.nio.charset.StandardCharsets.UTF_8)
+                .replaceAll("\u001B\\[[0-9;]*[mHJ]", ""));
+            return super.readText(prompt);
+        }
+    }
+
+    static String[] pageChoices(int pages, String next, String exit) {
+        ArrayList<String> choices = new ArrayList<>();
+        for (int i = 1; i < pages; i++) {
+            choices.add(next);
+        }
+        if (pages > 1) {
+            choices.add("P");
+            choices.add(next);
+        }
+        choices.add("invalid");
+        choices.add("invalid");
+        choices.add("invalid");
+        choices.add(exit);
+        return choices.toArray(new String[0]);
+    }
+
+    static void checkPageFrames(PageUI ui, int pages, int height, int width, String next) {
+        for (String frame : ui.frames) {
+            check(frame.split("\\R", -1).length <= height,
+                "Transaction page and prompt fit height " + height + " at width " + width
+                    + ": " + frame.split("\\R", -1).length + "\n" + frame);
+            for (String line : frame.split("\\R")) {
+                check(line.length() <= width, "Transaction line fits width " + width + ": " + line.length());
+            }
+            check(frame.contains("ENTER CHOICE") && frame.contains("> "), "Page includes options and prompt");
+        }
+        check(ui.frames.get(0).contains("[" + next + "]") == (pages > 1), "First page has usable Next only");
+        check(!ui.frames.get(0).contains("[P]"), "First page has no Previous");
+        if (pages > 1) {
+            check(!ui.frames.get(pages - 1).contains("[" + next + "]"), "Last page has no Next");
+            check(ui.frames.get(pages - 1).contains("[P]"), "Last page has Previous");
+        }
+        check(ui.errors.size() == 3, "Repeated invalid page choices are rejected");
+        check(ui.frames.get(ui.frames.size() - 1).contains("ERROR"), "Retry still shows the error and navigation");
+    }
+
+    static void transactionPaginationTests() throws Exception {
+        String oldWidth = System.getProperty("q2p.width");
+        String oldHeight = System.getProperty("q2p.height");
+        PrintStream oldOutput = System.out;
+        Queue2Play system = sessionSystem("transaction-pages");
+        User customer = system.users.get(1);
+        customer.username = "twentyletterusername";
+        CheckoutQueue queue = new CheckoutQueue();
+        queue.vipStreak = 2;
+        ArrayList<RentalRequest> planned = new ArrayList<>();
+        ArrayList<Rental> returned = new ArrayList<>();
+        Queue2Play.CheckoutSession session = new Queue2Play.CheckoutSession("admin");
+        java.time.LocalDateTime date = java.time.LocalDateTime.of(2026, 10, 11, 12, 31);
+        String title = "A long game title with several words that must remain fully visible on the page ENDMARK";
+        while (title.length() < 100) {
+            title += "A";
+        }
+        for (int i = 0; i < 40; i++) {
+            Game game = new Game("P" + (100 + i), title, "PS5", 4, 3);
+            RentalRequest request = new RentalRequest(2000 + i, customer, game);
+            request.rentalDays = 3;
+            request.vip = i % 4 != 3;
+            planned.add(request);
+            queue.enqueue(request);
+            Rental rental = new Rental(1000 + i, customer, game, date, date.plusDays(3), 12);
+            rental.status = "COMPLETED";
+            rental.returnDate = date.plusDays(4);
+            rental.daysLate = 1;
+            rental.lateFee = 2;
+            returned.add(rental);
+            if (i % 4 == 3) {
+                session.addCancellation(request);
+            } else {
+                session.addRental(rental);
+            }
+        }
+        int[] widths = {120, 81, 60, 40};
+        int[] heights = {50, 36, 30, 24, 20};
+        try {
+            for (int width : widths) {
+                for (int height : heights) {
+                    System.setProperty("q2p.width", String.valueOf(width));
+                    System.setProperty("q2p.height", String.valueOf(height));
+                    ByteArrayOutputStream frame = new ByteArrayOutputStream();
+                    System.setOut(new PrintStream(frame, true, "UTF-8"));
+                    TerminalUI sizing = new TerminalUI();
+                    int pages = sizing.receiptPages(session, queue).size() - 1;
+                    PageUI ui = new PageUI(pageChoices(pages, "N", "B"), frame);
+                    ui.showCheckoutReceipt(session, queue);
+                    check(ui.waitForReceiptNavigation(session, queue, "Checkout"), "Receipt Back returns to Checkout");
+                    checkPageFrames(ui, pages, height, width, "N");
+                    String all = String.join("\n", ui.frames);
+                    for (int i = 0; i < 40; i++) {
+                        check(all.contains("#" + ((i % 4 == 3 ? 2000 : 1000) + i)), "Every receipt entry is accessible");
+                    }
+                    check(all.contains("ENDMARK") && !all.contains("..."), "Receipt keeps the whole game title");
+                    check(all.contains("TOTAL $360.00"), "Receipt total covers all pages");
+
+                    frame.reset();
+                    pages = sizing.batchPages(planned, queue, system.rentalService).size() - 1;
+                    ui = new PageUI(pageChoices(pages, "F", "N"), frame);
+                    ui.showCheckoutBatch(planned, queue, system.rentalService);
+                    check(!ui.confirmCheckoutBatch(planned, queue, system.rentalService), "N still declines the batch");
+                    checkPageFrames(ui, pages, height, width, "F");
+                    all = String.join("\n", ui.frames);
+                    for (RentalRequest request : planned) {
+                        check(all.contains("#" + request.queueNumber), "Every batch request is accessible");
+                    }
+                    check(all.contains("ENDMARK") && !all.contains("..."), "Batch keeps the whole game title");
+                    frame.reset();
+                    ui = new PageUI(new String[] {"YES"}, frame);
+                    ui.showCheckoutBatch(planned, queue, system.rentalService);
+                    check(ui.confirmCheckoutBatch(planned, queue, system.rentalService), "YES still confirms all requests");
+
+                    frame.reset();
+                    pages = sizing.returnResultPages(returned).size() - 1;
+                    ui = new PageUI(pageChoices(pages, "N", "M"), frame);
+                    ui.showSelectedReturnResults(returned);
+                    check(!ui.waitForReturnResultNavigation(returned, "Return List"), "Return results M goes to Dashboard");
+                    checkPageFrames(ui, pages, height, width, "N");
+                    all = String.join("\n", ui.frames);
+                    for (Rental rental : returned) {
+                        check(all.contains("#" + rental.rentalNumber), "Every processed return is accessible");
+                    }
+                    check(all.contains("ENDMARK") && !all.contains("..."), "Results keep the whole game title");
+                    check(all.contains("Late fees $80.00"), "Return fee total covers all pages");
+                    check(queue.getRequests().size() == 40 && queue.vipStreak == 2,
+                        "Display and confirmation leave the queue and VIP streak unchanged");
+                    check(session.approved == 30 && session.cancelled == 10 && session.total == 360,
+                        "Receipt navigation preserves session counters");
+                    for (RentalRequest request : queue.getRequests()) {
+                        check(request.game.availableCopies == 3, "Pagination never changes stock");
+                    }
+
+                    // A one-page result must also keep repeated retries within the viewport.
+                    frame.reset();
+                    ui = new PageUI(new String[] {"bad", "bad", "bad", "M"}, frame);
+                    Queue2Play.CheckoutSession empty = new Queue2Play.CheckoutSession("admin");
+                    ui.showCheckoutReceipt(empty, queue);
+                    check(!ui.waitForReceiptNavigation(empty, queue, ""), "Exit receipt waits for Dashboard");
+                    checkPageFrames(ui, 1, height, width, "N");
+                    frame.reset();
+                    ui = new PageUI(new String[] {"B"}, frame);
+                    ArrayList<Rental> one = new ArrayList<>();
+                    one.add(returned.get(0));
+                    ui.showSelectedReturnResults(one);
+                    check(ui.waitForReturnResultNavigation(one, "Return List"), "Single return result goes Back to Return List");
+                    check(ui.frames.get(0).split("\\R", -1).length <= height, "Single return result fits the viewport");
+                }
+            }
+        } finally {
+            System.setOut(oldOutput);
+            if (oldWidth == null) { System.clearProperty("q2p.width"); }
+            else { System.setProperty("q2p.width", oldWidth); }
+            if (oldHeight == null) { System.clearProperty("q2p.height"); }
+            else { System.setProperty("q2p.height", oldHeight); }
+        }
+
+    }
+
+    static void separatedTransactionTests() throws Exception {
+        String oldWidth = System.getProperty("q2p.width");
+        String oldHeight = System.getProperty("q2p.height");
+        PrintStream oldOutput = System.out;
+        Queue2Play system = returnSystem("separated-ui", 12);
+        ArrayList<Rental> selected = system.rentalService.getRentalsByDueDate();
+        User customer = selected.get(0).client;
+        LinkedHashMap<Game, Integer> cart = new LinkedHashMap<>();
+        String title = "A long title that should wrap and remain complete in every confirmation and cart page ENDMARK";
+        for (int i = 0; i < selected.size(); i++) {
+            Rental rental = selected.get(i);
+            rental.game.title = title;
+            cart.put(rental.game, 1);
+        }
+        LinkedHashMap<Game, Integer> originalCart = new LinkedHashMap<>(cart);
+        java.time.LocalDateTime returnedAt = java.time.LocalDateTime.now();
+        try {
+            int[] widths = {120, 81, 60, 40};
+            int[] heights = {50, 36, 30, 24, 20};
+            for (int width : widths) {
+                for (int height : heights) {
+                    System.setProperty("q2p.width", String.valueOf(width));
+                    System.setProperty("q2p.height", String.valueOf(height));
+                    ByteArrayOutputStream frame = new ByteArrayOutputStream();
+                    System.setOut(new PrintStream(frame, true, "UTF-8"));
+                    TerminalUI sizing = new TerminalUI();
+                    int pages = sizing.returnConfirmationPages(selected, returnedAt, system.rentalService).size() - 1;
+                    PageUI ui = new PageUI(pageChoices(pages, "F", "N"), frame);
+                    check(!ui.confirmSelectedReturns(selected, returnedAt, system.rentalService), "Paged No declines selected returns");
+                    checkPageFrames(ui, pages, height, width, "F");
+                    String all = String.join("\n", ui.frames);
+                    check(all.contains("ENDMARK") && !all.contains("..."), "Return preview preserves full title");
+                    for (Rental rental : selected) {
+                        check(all.contains("#" + String.format("%03d", rental.rentalNumber)), "Every selected return is accessible");
+                        check(rental.status.equals("ACTIVE"), "Return preview never changes rental status");
+                    }
+                    frame.reset();
+                    ui = new PageUI(new String[] {"YES"}, frame);
+                    check(ui.confirmSelectedReturns(selected, returnedAt, system.rentalService), "YES still confirms the entire return selection");
+
+                    for (boolean editing : new boolean[] {false, true}) {
+                        frame.reset();
+                        pages = sizing.cartPages(customer, cart, 3, system.rentalService, editing).size() - 1;
+                        ui = new PageUI(new String[pages], frame);
+                        for (int page = 0; page < pages; page++) {
+                            ui.showCartPage(customer, cart, 3, system.rentalService, editing, page,
+                                sizing.cartPages(customer, cart, 3, system.rentalService, editing));
+                            ui.showCartActions(editing, page, pages);
+                            ui.readText(ui.prompt());
+                        }
+                        all = String.join("\n", ui.frames);
+                        check(all.contains("ENDMARK") && !all.contains("..."), "Cart preserves full game titles");
+                        for (String drawing : ui.frames) {
+                            check(drawing.split("\\R", -1).length <= height, "Cart frame fits viewport " + height + "x" + width + "\n" + drawing);
+                            for (String row : drawing.split("\\R")) {
+                                check(row.length() <= width, "Cart row fits terminal width");
+                            }
+                        }
+                        check(cart.equals(originalCart), "Cart rendering leaves all quantities unchanged");
+                    }
+                    frame.reset();
+                    pages = sizing.cartPages(customer, cart, 3, system.rentalService, true).size() - 1;
+                    ui = new PageUI(pageChoices(pages, "N", "B"), frame);
+                    system.ui = ui;
+                    check(system.editOrder(customer, cart, 3) == 3, "Edit Order page navigation preserves duration");
+                    check(cart.equals(originalCart), "Edit Order page navigation preserves the cart");
+                    for (String drawing : ui.frames) {
+                        check(drawing.split("\\R", -1).length <= height, "Edit Order retries fit viewport " + height + "x" + width + "\n" + drawing);
+                    }
+                }
+            }
+            System.setProperty("q2p.width", "120");
+            System.setProperty("q2p.height", "50");
+            ByteArrayOutputStream frame = new ByteArrayOutputStream();
+            System.setOut(new PrintStream(frame, true, "UTF-8"));
+            PageUI ui = new PageUI(new String[] {"B"}, frame);
+            Queue2Play.CheckoutSession session = new Queue2Play.CheckoutSession("admin");
+            ui.showCheckoutReceipt(session, system.checkoutQueue);
+            ui.waitForReceiptNavigation(session, system.checkoutQueue, "Checkout");
+            String empty = ui.frames.get(0);
+            check(empty.contains("Rows 0-0/0") && empty.contains("No transactions"), "Empty receipt has zero actual records");
+            check(empty.indexOf("ADMIN admin") < empty.indexOf("CUSTOMER"), "Administrator metadata precedes the rental table");
+            Rental rental = selected.get(0);
+            session.addRental(rental);
+            RentalRequest cancelled = new RentalRequest(500, customer, rental.game);
+            session.addCancellation(cancelled);
+            frame.reset();
+            ui = new PageUI(new String[] {"B"}, frame);
+            ui.showCheckoutReceipt(session, system.checkoutQueue);
+            ui.waitForReceiptNavigation(session, system.checkoutQueue, "Checkout");
+            String drawing = ui.frames.get(0);
+            check(drawing.contains("Rows 1-2/2") && drawing.contains("STATUS"), "Receipt counts actions only and has a status column");
+            check(drawing.contains("APPROVED") && drawing.contains("CANCELLED"), "Receipt distinguishes approval and cancellation statuses");
+        } finally {
+            System.setOut(oldOutput);
+            if (oldWidth == null) { System.clearProperty("q2p.width"); }
+            else { System.setProperty("q2p.width", oldWidth); }
+            if (oldHeight == null) { System.clearProperty("q2p.height"); }
+            else { System.setProperty("q2p.height", oldHeight); }
+        }
+    }
+
+    static void pagedBatchApprovalTests() {
+        Queue2Play system = freshSystem("paged-batch-approval");
+        User vip = client("pagevip", "VIP");
+        User regular = client("pageregular", "REGULAR");
+        system.users.add(vip);
+        system.users.add(regular);
+        for (int i = 0; i < 12; i++) {
+            Game game = system.gameCatalog.addGame("Paged Batch " + i, "PS5", 4, 2);
+            enqueue(system, i % 4 == 3 ? regular : vip, game, 1);
+        }
+        ArrayList<RentalRequest> planned = system.previewReadyCheckouts();
+        ScriptedUI ui = script(system, new String[] {"F", "P", "F", "YES"});
+        Queue2Play.CheckoutSession session = new Queue2Play.CheckoutSession("admin");
+        system.approveReadyBatch(session);
+        check(ui.nextChoice == 4 && session.approved == 12 && system.checkoutQueue.isEmpty(),
+            "Paged batch confirms the entire plan after forward and backward navigation");
+        for (int i = 0; i < planned.size(); i++) {
+            check(system.allRentals.get(i).game == planned.get(i).game, "Approval follows the predicted queue order");
+            check(planned.get(i).game.availableCopies == 1, "Paged approval deducts stock once");
+        }
+        Queue2Play loaded = new Queue2Play();
+        loaded.accountService.loadAccounts();
+        loaded.dataStore.loadGames();
+        loaded.dataStore.loadRentals();
+        loaded.dataStore.loadQueue();
+        check(loaded.allRentals.size() == 12 && loaded.checkoutQueue.isEmpty(), "Paged batch saves and reloads all approvals");
+    }
+
     public static void main(String[] args) throws Exception {
-        new ConsoleUI(); // Initialize the UTF-8 output stream before capturing TUI output.
+        new TerminalUI(); // Initialize the UTF-8 output stream before capturing TUI output.
         PrintStream originalOutput = System.out;
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         System.setOut(new PrintStream(output, true, "UTF-8"));
         testRoot = Files.createTempDirectory("q2p-behavior-tests-");
+        if (args.length > 0 && args[0].equals("pagination")) {
+            transactionPaginationTests();
+            separatedTransactionTests();
+            pagedBatchApprovalTests();
+            System.setOut(originalOutput);
+            System.out.println("PASS: " + checks + " transaction pagination checks. Isolated data: " + testRoot);
+            return;
+        }
         if (args.length > 0 && args[0].equals("responsive")) {
             responsiveListTests();
             discardConfirmationTests();
@@ -2449,6 +2808,7 @@ public class BehaviorRegressionTest {
             return;
         }
         if (args.length > 0 && args[0].equals("layout")) {
+            transactionPaginationTests();
             responsiveListTests();
             choiceAndCooldownLayoutTests();
             rentalPanelTests();
@@ -2463,7 +2823,7 @@ public class BehaviorRegressionTest {
         }
         if (args.length > 0 && args[0].equals("cooldown")) {
             System.setProperty("q2p.fast", "true");
-            ConsoleUI ui = new ConsoleUI();
+            TerminalUI ui = new TerminalUI();
             long started = System.nanoTime();
             ui.error("Incorrect username/email or password.");
             ui.showLoginCooldown();
@@ -2492,6 +2852,9 @@ public class BehaviorRegressionTest {
         predictedQueueTests();
         returnTests();
         checkoutSessionTests();
+        transactionPaginationTests();
+        separatedTransactionTests();
+        pagedBatchApprovalTests();
         receiptNavigationTests();
         completedResultTests();
         gameEditingTests();

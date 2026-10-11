@@ -1,14 +1,14 @@
 import java.util.ArrayList;
 // Accounts share the same recoverable file commit as inventory and rentals.
-class AccountService {
+class AccountManager {
     private final ArrayList<User> users;
-    private final ConsoleUI ui;
+    private final TerminalUI ui;
     private final RentalDataStore dataStore;
     // This counter belongs to the running application, not one login screen.
     private int failedLoginAttempts;
-    private final String unknownPasswordHash = Passwords.hashPlaintext("Unknown account");
+    private final String unknownPasswordHash = PasswordSecurity.hashPlaintext("Unknown account");
 
-    AccountService(ArrayList<User> users, ConsoleUI ui, RentalDataStore dataStore) {
+    AccountManager(ArrayList<User> users, TerminalUI ui, RentalDataStore dataStore) {
         this.users = users;
         this.ui = ui;
         this.dataStore = dataStore;
@@ -102,7 +102,7 @@ class AccountService {
                 RentalDataStore.require(validUsername(fields[0]) && validName(fields[1]) && validEmail(fields[2]), "Invalid account name or login identifier");
                 RentalDataStore.require(fields[4].equals("ADMIN") || fields[4].equals("CLIENT"), "Invalid role");
                 RentalDataStore.require(fields[5].equals("REGULAR") || fields[5].equals("VIP"), "Invalid membership");
-                RentalDataStore.require(fields[3].length() >= 8 && !GameCatalogService.containsControlCharacter(fields[3]), "Invalid stored password");
+                RentalDataStore.require(fields[3].length() >= 8 && !GameCatalog.containsControlCharacter(fields[3]), "Invalid stored password");
                 RentalDataStore.require(findUserByLogin(fields[0]) == null && findUserByLogin(fields[2]) == null && !fields[0].equalsIgnoreCase(fields[2]), "Duplicate login identifier");
                 users.add(new User(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5]));
             } catch (IllegalArgumentException e) {
@@ -137,8 +137,8 @@ class AccountService {
         account.fullName = name;
         account.email = email;
         account.role = role;
-        if (!Passwords.matches(password, account.password)) {
-            account.password = Passwords.hashPlaintext(password);
+        if (!PasswordSecurity.matches(password, account.password)) {
+            account.password = PasswordSecurity.hashPlaintext(password);
             embeddedAccountsChanged = true;
         }
         // Keep saved client upgrades and rental references when restoring the embedded logins.
@@ -310,7 +310,7 @@ class AccountService {
             }
         }
         ui.loading("Creating account");
-        users.add(new User(username, fullName, email, Passwords.hashPlaintext(password), "CLIENT", "REGULAR"));
+        users.add(new User(username, fullName, email, PasswordSecurity.hashPlaintext(password), "CLIENT", "REGULAR"));
         dataStore.writeLog("EVENT", "Registered account: " + username);
         saveAccounts();
         ui.clearScreen();
@@ -364,7 +364,7 @@ class AccountService {
                 if (user != null) {
                     storedPassword = user.password;
                 }
-                boolean matches = Passwords.matches(password, storedPassword);
+                boolean matches = PasswordSecurity.matches(password, storedPassword);
                 if (user == null || !matches) {
                     failedLogin(login);
                     continue;
