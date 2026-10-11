@@ -108,7 +108,7 @@ class GameCatalogService {
     // Linear search checks each game in the selected list for a matching ID, title, or platform.
     ArrayList<Game> linearSearch(ArrayList<Game> list, String keyword) {
         ArrayList<Game> results = new ArrayList<>();
-        String key = keyword.toLowerCase(java.util.Locale.ROOT);
+        String key = keyword.trim().toLowerCase(java.util.Locale.ROOT);
         for (Game game : list) {
             if (game.gameId.toLowerCase(java.util.Locale.ROOT).equals(key)
                 || game.title.toLowerCase(java.util.Locale.ROOT).contains(key)
@@ -117,6 +117,15 @@ class GameCatalogService {
             }
         }
         return results;
+    }
+
+    // Build a fresh view every time: searching always uses the full platform list.
+    ArrayList<Game> getDisplayList(ArrayList<Game> platformGames, String keyword, int sortOption) {
+        ArrayList<Game> displayGames = linearSearch(platformGames, keyword);
+        if (sortOption != 0) {
+            insertionSort(displayGames, sortOption);
+        }
+        return displayGames;
     }
 
     // Insertion sort shifts games until each one is placed at its selected title or price position.

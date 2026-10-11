@@ -23,3 +23,8 @@
 2026-10-10 15:51:23|ADMIN|Processed checkout: alex - Animal Crossing x1
 2026-10-10 15:51:38|ADMIN|Processed checkout: juan - Forza Horizon 5 x1
 2026-10-10 15:51:50|ADMIN|Processed checkout: alex - Forza Horizon 5 x1
+2026-10-10 16:49:07|EVENT|Login: juan (CLIENT)
+2026-10-10 16:58:03|EVENT|Login: juan (CLIENT)
+2026-10-11 07:51:47|EVENT|Login: admin (ADMIN)
+2026-10-11 07:57:01|EVENT|Login: admin (ADMIN)
+2026-10-11 07:59:12|EVENT|Login: juan (CLIENT)
