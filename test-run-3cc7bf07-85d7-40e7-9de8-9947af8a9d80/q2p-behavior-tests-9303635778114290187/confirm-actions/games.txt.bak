@@ -1,0 +1,8 @@
+#COUNTERS|1|1|4
+# GAME ID|TITLE|PLATFORM|PRICE|AVAILABLE COPIES
+P001|Shared Game|PS5|5.0|3
+X001|Unavailable Game|Xbox|5.0|0
+N001|Batch VIP 0|Nintendo|5.0|0
+N002|Batch VIP 1|Nintendo|5.0|1
+N003|Batch VIP 2|Nintendo|5.0|1
+N004|Batch VIP 3|Nintendo|5.0|1

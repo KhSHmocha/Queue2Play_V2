@@ -1,0 +1,3 @@
+# USERNAME|FULL NAME|EMAIL|PASSWORD HASH|ROLE|MEMBERSHIP
+vipone|Test Client|vipone@example.com|pbkdf2$210000$z+/VxTbkijNoHycDCuTJCw==$t9XIfa9QOYOL1vGao77mul/NXRA2rscsqUwZ/LQlVQ4=|CLIENT|VIP
+regularone|Test Client|regularone@example.com|pbkdf2$210000$c8KZWk0cqL/52aU1dJgi5A==$xmYRfqZxntBVTC6pbh8bhVDbSsUkwwCuJekUHBixOH0=|CLIENT|REGULAR

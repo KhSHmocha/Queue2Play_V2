@@ -28,3 +28,33 @@
 2026-10-11 07:51:47|EVENT|Login: admin (ADMIN)
 2026-10-11 07:57:01|EVENT|Login: admin (ADMIN)
 2026-10-11 07:59:12|EVENT|Login: juan (CLIENT)
+2026-10-11 08:52:56|EVENT|Login: admin (ADMIN)
+2026-10-11 08:54:57|EVENT|Login: juan (CLIENT)
+2026-10-11 08:56:10|EVENT|Login: admin (ADMIN)
+2026-10-11 08:58:04|ADMIN|Cancelled queue request #001: juan
+2026-10-11 09:17:28|EVENT|Login: juan (CLIENT)
+2026-10-11 09:18:16|EVENT|Queue request #008: juan - God of War x2 (3 day(s))
+2026-10-11 09:18:16|EVENT|Queue request #009: juan - Mario Kart 8 x2 (3 day(s))
+2026-10-11 09:18:30|EVENT|Login: admin (ADMIN)
+2026-10-11 09:19:27|EVENT|Failed login attempt for account: lex
+2026-10-11 09:19:43|EVENT|Login: alex (CLIENT)
+2026-10-11 09:20:58|EVENT|Queue request #010: alex - Zelda: Tears of the Kingdom x1 (7 day(s))
+2026-10-11 09:20:58|EVENT|Queue request #011: alex - Mario Kart 8 x2 (7 day(s))
+2026-10-11 09:20:58|EVENT|Queue request #012: alex - Minecraft x1 (7 day(s))
+2026-10-11 09:21:37|EVENT|Login: admin (ADMIN)
+2026-10-11 09:22:10|EVENT|Login: admin (ADMIN)
+2026-10-11 09:23:00|EVENT|Incorrect password attempt for: alex
+2026-10-11 09:23:07|EVENT|Incorrect password attempt for: alex
+2026-10-11 09:23:21|EVENT|Login: alex (CLIENT)
+2026-10-11 09:27:30|EVENT|Queue request #013: alex - test x3 (1 day(s))
+2026-10-11 09:27:30|EVENT|Queue request #014: alex - Halo Infinite x5 (1 day(s))
+2026-10-11 09:28:21|EVENT|Login: admin (ADMIN)
+2026-10-11 09:29:45|ADMIN|Cancelled queue request #011: alex
+2026-10-11 09:43:05|EVENT|Login: admin (ADMIN)
+2026-10-11 09:43:38|ADMIN|Processed checkout: alex - Zelda: Tears of the Kingdom x1
+2026-10-11 09:43:38|ADMIN|Processed checkout: alex - Minecraft x1
+2026-10-11 09:43:38|ADMIN|Processed checkout: juan - Mario Kart 8 x2
+2026-10-11 09:43:38|ADMIN|Processed checkout: alex - test x3
+2026-10-11 09:44:12|ADMIN|Cancelled queue request #008: juan
+2026-10-11 09:50:11|ADMIN|Processed return: alex - Spider-Man 2 x2; days late 0; fee $0.00
+2026-10-11 09:53:56|EVENT|Login: admin (ADMIN)

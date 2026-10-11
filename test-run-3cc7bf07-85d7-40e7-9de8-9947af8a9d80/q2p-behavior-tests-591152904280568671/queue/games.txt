@@ -1,0 +1,8 @@
+#COUNTERS|1|1|4
+# GAME ID|TITLE|PLATFORM|PRICE|AVAILABLE COPIES
+P001|Waiting|PS5|5.0|0
+X001|Ready|Xbox|5.0|19
+N001|VIP Game 0|Nintendo|5.0|1
+N002|VIP Game 1|Nintendo|5.0|1
+N003|VIP Game 2|Nintendo|5.0|1
+N004|VIP Game 3|Nintendo|5.0|1

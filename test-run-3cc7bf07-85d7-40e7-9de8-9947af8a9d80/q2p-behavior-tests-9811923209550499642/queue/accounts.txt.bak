@@ -1,0 +1,3 @@
+# USERNAME|FULL NAME|EMAIL|PASSWORD HASH|ROLE|MEMBERSHIP
+vipclient|Test Client|vipclient@example.com|pbkdf2$210000$910DeuSbJRYcQNGusUpRhA==$QbfUoOLV+Ne73wsv55Zkr35S/yALJVBiAsQQU4TQSmQ=|CLIENT|VIP
+regclient|Test Client|regclient@example.com|pbkdf2$210000$rVBv2LSJrkptwDYD82sYsA==$DU3pCTmd//CEngGOOjhgIJfuf2oqQNMjanUEtROsg+g=|CLIENT|REGULAR

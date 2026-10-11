@@ -1,0 +1,6 @@
+# USERNAME|FULL NAME|EMAIL|PASSWORD HASH|ROLE|MEMBERSHIP
+admin|System Admin|admin@store.com|pbkdf2$210000$dZEIKCe8vizqlQOEzUxbWA==$/gzBW79j2o5UQZGMMpMnDSINxubwT+n/kqMrcuQjAh4=|ADMIN|REGULAR
+vipclient|Test Client|vipclient@example.com|pbkdf2$210000$910DeuSbJRYcQNGusUpRhA==$QbfUoOLV+Ne73wsv55Zkr35S/yALJVBiAsQQU4TQSmQ=|CLIENT|VIP
+regclient|Test Client|regclient@example.com|pbkdf2$210000$rVBv2LSJrkptwDYD82sYsA==$DU3pCTmd//CEngGOOjhgIJfuf2oqQNMjanUEtROsg+g=|CLIENT|REGULAR
+alex|Alex R. Reyes|alex@email.com|pbkdf2$210000$foa37ws82+3HL65wzGfUeQ==$E59GWQluCYa2w2VAYd+mnaKdsoZ/zau5RE2BFTXsges=|CLIENT|VIP
+juan|Juan D. Cruz|juan@email.com|pbkdf2$210000$+x3LzMBxCLq20xLluYeKEw==$+RZmsln9GchFOXhFZs2Jztn6l82suK8B71LOuToAuRU=|CLIENT|REGULAR

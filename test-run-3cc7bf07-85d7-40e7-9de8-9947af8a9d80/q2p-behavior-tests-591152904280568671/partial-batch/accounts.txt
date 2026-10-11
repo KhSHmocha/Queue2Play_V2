@@ -1,0 +1,2 @@
+# USERNAME|FULL NAME|EMAIL|PASSWORD HASH|ROLE|MEMBERSHIP
+failureclient|Test Client|failureclient@example.com|pbkdf2$210000$GV1zVa+TPn/jDpAYXFYeCw==$ZVHdl9Yf1ueUG0gTndT+2mHeSpR+gOlMJCi5r6I+sDA=|CLIENT|REGULAR

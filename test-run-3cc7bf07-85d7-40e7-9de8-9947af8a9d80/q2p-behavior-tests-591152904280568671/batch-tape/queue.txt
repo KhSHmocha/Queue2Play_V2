@@ -1,0 +1,4 @@
+#COUNTERS|8|1
+# QUEUE #|USERNAME|GAME ID|VIP|RENTAL DAYS|QUANTITY
+7|vipone|P001|true|3|2
+6|regularone|X001|false|3|1

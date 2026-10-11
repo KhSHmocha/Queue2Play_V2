@@ -1,4 +1,6 @@
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Scanner;
 import java.util.regex.Matcher;
@@ -100,6 +102,8 @@ public class ConsoleUI {
     // Display validation once, below the next input guide or before an ENTER pause.
     private String pendingMessage = null;
     private String pendingMessageType = null;
+    private boolean checkoutDisplay = false;
+    private static final DateTimeFormatter RECEIPT_DATE = DateTimeFormatter.ofPattern("MMM dd", java.util.Locale.ENGLISH);
 
     private String color(String text, String tone) {
         if (!colorsEnabled || tone.isEmpty() || text.isEmpty()) {
@@ -296,7 +300,7 @@ public class ConsoleUI {
     }
 
     private void printLine(String line) {
-        if (line.length() > terminalWidth) {
+        if (line.length() > terminalWidth && !checkoutDisplay) {
             if (line.matches("[+\\-=]+")) {
                 printLine(line.substring(0, terminalWidth));
                 return;
@@ -465,7 +469,11 @@ public class ConsoleUI {
         printLine("+" + "-".repeat(left) + text + "-".repeat(right) + "+");
         textTone = SOFT_WHITE;
         printBoxCentered("", width);
-        printMessageRows(guide, width);
+        if (checkoutDisplay && label.equals("ENTER CHOICE")) {
+            printBoxCentered(guide, width);
+        } else {
+            printMessageRows(guide, width);
+        }
         printBoxCentered("", width);
         textTone = previousText;
         printLine(border(width, '-'));
@@ -595,7 +603,11 @@ public class ConsoleUI {
         if (pendingMessage == null || pendingMessage.isEmpty()) {
             return;
         }
-        printMessageBox(pendingMessageType + ": " + pendingMessage, width);
+        if (checkoutDisplay) {
+            showMessageCard(pendingMessageType + ": " + pendingMessage);
+        } else {
+            printMessageBox(pendingMessageType + ": " + pendingMessage, width);
+        }
         pendingMessage = null;
         pendingMessageType = null;
     }
@@ -1397,10 +1409,314 @@ public class ConsoleUI {
         showNavigationOptions(new String[] {"[0] Back to Dashboard"});
     }
 
-    void showCheckoutActions() {
-        showFeatureOptions(new String[] {"[1] Approve next eligible request", "[2] Cancel any request"});
-        showNavigationOptions(CHECKOUT_QUEUE_TABLE_WIDTH, new String[] {"[0] Back", "[M] Dashboard"});
-        inputBar("ENTER CHOICE", CHECKOUT_QUEUE_TABLE_WIDTH);
+    // Format plain text to 81 columns before the shared renderer applies colors.
+    private void checkoutRow(String text) {
+        printBoxCentered(" " + String.format("%-77s", fit(text, 77)) + " ", CHECKOUT_QUEUE_TABLE_WIDTH);
+    }
+
+    boolean checkoutReady(RentalRequest request) {
+        return CheckoutQueue.validRequest(request) && request.game.availableCopies >= request.quantity;
+    }
+
+    String checkoutStatus(RentalRequest request) {
+        if (!CheckoutQueue.validRequest(request)) {
+            return "WAIT invalid";
+        }
+        if (checkoutReady(request)) {
+            return "READY";
+        }
+        if (request.game.availableCopies == 0) {
+            return "WAIT need " + request.quantity;
+        }
+        return "WAIT short " + (request.quantity - request.game.availableCopies);
+    }
+
+    String checkoutStock(RentalRequest request) {
+        if (request.game == null) {
+            return "-";
+        }
+        int stock = request.game.availableCopies;
+        if (checkoutReady(request)) {
+            return stock + "→" + (stock - request.quantity);
+        }
+        return String.valueOf(stock);
+    }
+
+    String checkoutStreak(int streak) {
+        String dots = "";
+        for (int i = 0; i < CheckoutQueue.VIP_BURST; i++) {
+            if (i < streak) {
+                dots += "●";
+            } else {
+                dots += "○";
+            }
+        }
+        return dots;
+    }
+
+    String checkoutNext(CheckoutQueue queue, RentalService service) {
+        RentalRequest next = queue.findNextEligibleRequest();
+        if (next == null) {
+            return "NEXT  none ready";
+        }
+        return "NEXT  " + queueLabel(next.queueNumber) + " " + fit(next.client.username, 10)
+            + " · " + fit(next.game.title, 22) + " x" + next.quantity + " · " + next.rentalDays
+            + " days · " + money(service.calculateRentalCost(next.client, next.game, next.rentalDays, next.quantity));
+    }
+
+    void showCheckoutQueue(CheckoutQueue queue, RentalService service) {
+        clearScreen();
+        checkoutDisplay = true;
+        currentWidth = CHECKOUT_QUEUE_TABLE_WIDTH;
+        ArrayList<RentalRequest> requests = queue.getRequests();
+        int ready = 0;
+        for (RentalRequest request : requests) {
+            if (checkoutReady(request)) {
+                ready++;
+            }
+        }
+        printLine(border(currentWidth, '='));
+        checkoutRow("ADMIN > CHECKOUT           QUEUE " + requests.size() + "  READY " + ready
+            + "  WAITING " + (requests.size() - ready));
+        printLine(border(currentWidth, '='));
+        if (requests.isEmpty()) {
+            showEmptyState("The checkout queue is empty.");
+        } else {
+            checkoutRow(String.format("%-7s%-5s%-10s%-18s%3s  %4s  %-7s%s",
+                "#", "PRI", "CUSTOMER", "GAME", "QTY", "DAYS", "STOCK", "STATUS"));
+            printLine(border(currentWidth, '-'));
+            for (RentalRequest request : requests) {
+                String priority = "REG";
+                if (request.vip) {
+                    priority = membershipColor(true);
+                }
+                String customer = "-";
+                String title = "-";
+                if (request.client != null) {
+                    customer = request.client.username;
+                }
+                if (request.game != null) {
+                    title = request.game.title;
+                }
+                checkoutRow(String.format("%-7s%-5s%-10s%-18s%3d  %4d  %-7s%s",
+                    queueLabel(request.queueNumber), priority, fit(customer, 9),
+                    fit(title, 17), request.quantity, request.rentalDays,
+                    checkoutStock(request), checkoutStatus(request)));
+            }
+        }
+        printLine(border(currentWidth, '-'));
+        checkoutRow("VIP streak " + checkoutStreak(queue.vipStreak) + " " + queue.vipStreak + "/" + CheckoutQueue.VIP_BURST);
+        printLine(border(currentWidth, '='));
+        checkoutRow(checkoutNext(queue, service));
+        printLine(border(currentWidth, '='));
+        flushBorder(false);
+        lastWasRow = false;
+        showTapeInput();
+    }
+
+    void showCheckoutTapeFooter(GameRentalSystem.CheckoutSession session, CheckoutQueue queue, RentalService service) {
+        showSessionStatus(session, queue, service);
+        showTapeInput();
+    }
+
+    // Finish each card before starting the next, so shared borders do not join them.
+    private void beginCheckoutCard(char fill) {
+        flushBorder(false);
+        lastWasRow = false;
+        currentWidth = CHECKOUT_QUEUE_TABLE_WIDTH;
+        lightBox = false;
+        borderTone = PINK;
+        textTone = "";
+        printLine(border(currentWidth, fill));
+    }
+
+    private void endCheckoutCard(char fill) {
+        printLine(border(currentWidth, fill));
+        flushBorder(false);
+        lastWasRow = false;
+        textTone = "";
+    }
+
+    private void showSlipTitle(String title, int number, LocalDateTime timestamp, String tone) {
+        textTone = tone;
+        String label = title + "  #" + String.format("%02d", number);
+        String time = timestamp.format(DateTimeFormatter.ofPattern("hh:mm a", java.util.Locale.ENGLISH));
+        checkoutRow(String.format("%-69s%8s", fit(label, 69), time));
+        textTone = "";
+        printLine(border(currentWidth, '-'));
+    }
+
+    void showApprovedSlip(Rental rental, int number) {
+        beginCheckoutCard('-');
+        showSlipTitle("✔ APPROVED", number, rental.checkoutDate, GREEN);
+        int days = (int) java.time.Duration.between(rental.checkoutDate, rental.dueDate).toDays();
+        checkoutRow(String.format("%-11s %-10s %-24s x%d %2d days %9s",
+            rentalLabel(rental.rentalNumber), fit(rental.client.username, 10), fit(rental.game.title, 24),
+            rental.quantity, days, money(rental.amount)));
+        checkoutRow("Out " + rental.checkoutDate.format(RECEIPT_DATE) + "     Due " + rental.dueDate.format(RECEIPT_DATE));
+        endCheckoutCard('-');
+    }
+
+    void showCancelledSlip(RentalRequest request, int number) {
+        beginCheckoutCard('-');
+        showSlipTitle("✘ CANCELLED", number, LocalDateTime.now(), RED);
+        checkoutRow(String.format("%-11s %-10s %-24s x%d %2d days",
+            queueLabel(request.queueNumber), fit(request.client.username, 10), fit(request.game.title, 24),
+            request.quantity, request.rentalDays));
+        endCheckoutCard('-');
+    }
+
+    void showSessionStatus(GameRentalSystem.CheckoutSession session, CheckoutQueue queue, RentalService service) {
+        beginCheckoutCard('=');
+        String counts = "SESSION   APPROVED " + session.approved + "   CANCELLED " + session.cancelled
+            + "   TOTAL " + money(session.total);
+        checkoutRow(String.format("%-70s%7s", fit(counts, 70), "VIP " + checkoutStreak(queue.vipStreak)));
+        printLine(border(currentWidth, '='));
+        checkoutRow(checkoutNext(queue, service));
+        endCheckoutCard('=');
+    }
+
+    void showTapeInput() {
+        showPendingMessage(CHECKOUT_QUEUE_TABLE_WIDTH);
+        flushBorder(false);
+        lastWasRow = false;
+        inputBar("ENTER CHOICE", CHECKOUT_QUEUE_TABLE_WIDTH,
+            "[ENTER] Approve  [A] All  [X] Cancel #  [Q] Queue  [R] Receipt  [0] Back");
+        flushBorder(false);
+        lastWasRow = false;
+    }
+
+    void showMessageCard(String message) {
+        beginCheckoutCard('-');
+        textTone = RED;
+        if (message.startsWith("WARNING:")) {
+            textTone = YELLOW;
+        }
+        printMessageRows(message, CHECKOUT_QUEUE_TABLE_WIDTH);
+        endCheckoutCard('-');
+    }
+
+    void showConfirmQuestion(String text) {
+        showPendingMessage(CHECKOUT_QUEUE_TABLE_WIDTH);
+        flushBorder(false);
+        lastWasRow = false;
+        String separator = "─".repeat(CHECKOUT_QUEUE_TABLE_WIDTH);
+        emitLine(color(separator, PINK));
+        emitLine(center(text, CHECKOUT_QUEUE_TABLE_WIDTH));
+        emitLine(color(separator, PINK));
+    }
+
+    private boolean confirmCheckoutAction(String question) {
+        while (true) {
+            showConfirmQuestion(question);
+            String answer = readText(prompt(CHECKOUT_QUEUE_TABLE_WIDTH));
+            if (answer.equalsIgnoreCase("Y") || answer.equalsIgnoreCase("YES")) {
+                return true;
+            }
+            if (answer.equalsIgnoreCase("N") || answer.equalsIgnoreCase("NO")) {
+                return false;
+            }
+            error("Use Y or N.");
+        }
+    }
+
+    boolean confirmCheckout(RentalRequest request, RentalService service) {
+        double cost = service.calculateRentalCost(request.client, request.game, request.rentalDays, request.quantity);
+        String prefix = "Approve " + queueLabel(request.queueNumber) + " " + fit(request.client.username, 10) + " · ";
+        String suffix = " x" + request.quantity + " · " + money(cost) + " ?   [Y] Yes   [N] No";
+        int titleWidth = CHECKOUT_QUEUE_TABLE_WIDTH - prefix.length() - suffix.length();
+        return confirmCheckoutAction(prefix + fit(request.game.title, titleWidth) + suffix);
+    }
+
+    boolean confirmCheckoutCancellation(RentalRequest request) {
+        String prefix = "Cancel " + queueLabel(request.queueNumber) + " " + fit(request.client.username, 10) + " · ";
+        String suffix = " x" + request.quantity + " ?   [Y] Yes   [N] No";
+        int titleWidth = CHECKOUT_QUEUE_TABLE_WIDTH - prefix.length() - suffix.length();
+        return confirmCheckoutAction(prefix + fit(request.game.title, titleWidth) + suffix);
+    }
+
+    boolean confirmCheckoutBatch(int count) {
+        return confirmCheckoutAction("Confirm batch? [Y] Approve " + count + " [N] Cancel");
+    }
+
+    void showCheckoutBatch(ArrayList<RentalRequest> planned, CheckoutQueue queue, RentalService service) {
+        beginCheckoutCard('=');
+        printTitle("APPROVE ALL READY (" + planned.size() + ")", CHECKOUT_QUEUE_TABLE_WIDTH);
+        printLine(border(currentWidth, '='));
+        double total = 0;
+        int streak = queue.vipStreak;
+        int number = 1;
+        for (RentalRequest request : planned) {
+            String priority = "";
+            if (request.vip) {
+                streak = Math.min(CheckoutQueue.VIP_BURST, streak + 1);
+                priority = "VIP (streak " + streak + "/" + CheckoutQueue.VIP_BURST + ")";
+            } else {
+                streak = 0;
+            }
+            double cost = service.calculateRentalCost(request.client, request.game, request.rentalDays, request.quantity);
+            total += cost;
+            checkoutRow(String.format("%3d %-7s %-10s %-18s x%d %9s %s", number++,
+                queueLabel(request.queueNumber), fit(request.client.username, 10),
+                fit(request.game.title, 18), request.quantity, money(cost), priority));
+        }
+        printLine(border(currentWidth, '-'));
+        checkoutRow("TOTAL " + planned.size() + " rentals · " + money(total));
+        String skipped = "Skipped:";
+        for (RentalRequest request : queue.getRequests()) {
+            if (!planned.contains(request)) {
+                String label = queueLabel(request.queueNumber) + " (stock)";
+                if (!CheckoutQueue.validRequest(request)) {
+                    label = queueLabel(request.queueNumber) + " (invalid)";
+                }
+                if (skipped.length() + label.length() + 1 > 77) {
+                    checkoutRow(skipped);
+                    skipped = "Skipped:";
+                }
+                skipped += " " + label;
+            }
+        }
+        if (skipped.equals("Skipped:")) {
+            skipped += " none";
+        }
+        checkoutRow(skipped);
+        endCheckoutCard('=');
+    }
+
+    void showCheckoutReceipt(GameRentalSystem.CheckoutSession session, CheckoutQueue queue) {
+        printHeader("CHECKOUT SESSION RECEIPT", CHECKOUT_QUEUE_TABLE_WIDTH);
+        checkoutRow(session.started.format(DateTimeFormatter.ofPattern("MMM dd, yyyy hh:mm a"))
+            + " · " + fit(session.admin, 32));
+        printLine(border(currentWidth, '='));
+        checkoutRow(String.format("%-8s%-11s%-24s%3s %10s  %s", "RENTAL", "CUSTOMER", "GAME", "QTY", "AMOUNT", "DUE"));
+        for (GameRentalSystem.CheckoutEntry entry : session.entries) {
+            if (entry.rental != null) {
+                Rental rental = entry.rental;
+                checkoutRow(String.format("%-8s%-11s%-24s%3d %10s  %s",
+                    rentalLabel(rental.rentalNumber), fit(rental.client.username, 10),
+                    fit(rental.game.title, 23), rental.quantity, money(rental.amount), rental.dueDate.format(RECEIPT_DATE)));
+            } else {
+                RentalRequest request = entry.cancelled;
+                checkoutRow(String.format("%-8s%-11s%-24s%3d %10s  %s",
+                    queueLabel(request.queueNumber), fit(request.client.username, 10),
+                    fit(request.game.title, 23), request.quantity, "-", "cancelled"));
+            }
+        }
+        printLine(border(currentWidth, '-'));
+        checkoutRow(session.approved + " rentals · " + session.copies + " copies · " + session.cancelled
+            + " cancelled                 TOTAL " + money(session.total));
+        int waiting = 0;
+        for (RentalRequest request : queue.getRequests()) {
+            if (!checkoutReady(request)) {
+                waiting++;
+            }
+        }
+        checkoutRow("Left in queue: " + queue.getRequests().size() + " (" + waiting + " waiting)");
+        printLine(border(currentWidth, '='));
+    }
+
+    void endCheckoutDisplay() {
+        checkoutDisplay = false;
     }
 
     void showQueueCancellationOptions() {
@@ -1431,17 +1747,6 @@ public class ConsoleUI {
             "Quantity        : " + next.quantity,
             "Rental Duration : " + next.rentalDays + " day(s)",
             "Rental Price    : " + money(rentalCost)
-        });
-    }
-
-    void showCheckoutApproved(Rental rental) {
-        printCenteredDetails(new String[] {
-            "Rental: " + rentalLabel(rental.rentalNumber),
-            "Status: ACTIVE - Checkout approved",
-            "Quantity: " + rental.quantity,
-            "Amount: " + money(rental.amount),
-            "Rented On: " + rental.checkoutDate.format(GameRentalSystem.DATE_FORMAT),
-            "Due On: " + rental.dueDate.format(GameRentalSystem.DATE_FORMAT)
         });
     }
 

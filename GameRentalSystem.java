@@ -945,7 +945,7 @@ public class GameRentalSystem {
             int choice = ui.readNumber(ui.prompt());
             try {
                 if (choice == 1) {
-                    checkoutManagement();
+                    checkoutManagement(admin.username);
                 } else if (choice == 2) {
                     processReturn();
                 } else if (choice == 3) {
@@ -989,84 +989,214 @@ public class GameRentalSystem {
         }
     }
 
-    // Queue list, eligible request, approval, and cancellation stay on one screen.
-    void checkoutManagement() {
-        boolean cancelling = false;
-        while (true) {
-            ui.printHeader("ADMIN > CHECKOUT MANAGEMENT", "CHECKOUT QUEUE", ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH);
-            ui.showQueue(checkoutQueue);
-            RentalRequest next = checkoutQueue.findNextEligibleRequest();
-            if (next != null) {
-                ui.showNextCheckout(rentalService.calculateRentalCost(next.client, next.game,
-                    next.rentalDays, next.quantity), next);
-            } else if (!checkoutQueue.isEmpty()) {
-                ui.info("All requests are waiting for enough stock.");
-            }
+    // Session records are display-only and never enter the saved data format.
+    static class CheckoutEntry {
+        Rental rental;
+        RentalRequest cancelled;
 
-            if (cancelling) {
-                ui.info("Enter a queue number to cancel. [0] Back  [M] Dashboard");
-                ui.inputBar("QUEUE NUMBER TO CANCEL", ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH);
-            } else {
-                ui.showCheckoutActions();
-            }
+        CheckoutEntry(Rental rental, RentalRequest cancelled) {
+            this.rental = rental;
+            this.cancelled = cancelled;
+        }
+    }
+
+    static class CheckoutSession {
+        ArrayList<CheckoutEntry> entries = new ArrayList<>();
+        String admin;
+        LocalDateTime started = LocalDateTime.now();
+        int approved;
+        int cancelled;
+        int copies;
+        double total;
+
+        CheckoutSession(String admin) {
+            this.admin = admin;
+        }
+
+        void addRental(Rental rental) {
+            entries.add(new CheckoutEntry(rental, null));
+            approved++;
+            copies += rental.quantity;
+            total = Math.round((total + rental.amount) * 100) / 100.0;
+        }
+
+        void addCancellation(RentalRequest request) {
+            entries.add(new CheckoutEntry(null, request));
+            cancelled++;
+        }
+    }
+
+    void checkoutManagement() {
+        checkoutManagement("admin");
+    }
+
+    void checkoutManagement(String admin) {
+        CheckoutSession session = new CheckoutSession(admin);
+        try {
+            runCheckoutSession(session);
+        } finally {
+            ui.endCheckoutDisplay();
+        }
+    }
+
+    private void runCheckoutSession(CheckoutSession session) {
+        ui.showCheckoutQueue(checkoutQueue, rentalService);
+        while (true) {
             String choice = ui.readText(ui.prompt(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH));
-            if (choice.equalsIgnoreCase("M")) {
-                requestDashboardReturn();
-                return;
-            }
-            if (choice.equals("0")) {
-                if (cancelling) {
-                    cancelling = false;
-                    continue;
+            if (choice.equals("0") || choice.equalsIgnoreCase("M")) {
+                if (!session.entries.isEmpty()) {
+                    ui.showCheckoutReceipt(session, checkoutQueue);
+                    ui.waitForEnter(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH);
+                }
+                if (choice.equalsIgnoreCase("M")) {
+                    requestDashboardReturn();
                 }
                 return;
             }
-            if (cancelling) {
-                RentalRequest request;
-                try {
-                    request = checkoutQueue.findByNumber(Integer.parseInt(choice));
-                } catch (NumberFormatException e) {
-                    ui.error("Enter a valid queue number.");
-                    continue;
-                }
-                if (request == null) {
-                    ui.error("Request not found.");
-                    continue;
-                }
-                if (ui.askYesNo("Cancel request " + ui.queueLabel(request.queueNumber)
-                        + " for " + request.client.username + "?")) {
-                    checkoutQueue.remove(request);
-                    logAdmin("Cancelled queue request " + ui.queueLabel(request.queueNumber)
-                        + ": " + request.client.username);
-                    dataStore.saveQueue();
-                    ui.success("Request cancelled and saved.");
-                }
-                cancelling = false;
-            } else if (choice.equals("1")) {
+            if (choice.equalsIgnoreCase("Q")) {
+                ui.showCheckoutQueue(checkoutQueue, rentalService);
+                continue;
+            }
+            if (choice.equalsIgnoreCase("R")) {
+                ui.showCheckoutReceipt(session, checkoutQueue);
+                ui.waitForEnter(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH);
+                ui.showCheckoutQueue(checkoutQueue, rentalService);
+                continue;
+            }
+            int entriesBeforeAction = session.entries.size();
+            if (choice.isEmpty()) {
+                RentalRequest next = checkoutQueue.findNextEligibleRequest();
                 if (next == null) {
-                    ui.warning("No request has enough stock for checkout.");
-                    continue;
+                    ui.warning("No request is ready.");
+                } else if (ui.confirmCheckout(next, rentalService)) {
+                    approveSessionRequest(next, session);
                 }
-                if (ui.askYesNo("Approve checkout " + ui.queueLabel(next.queueNumber)
-                        + " for " + next.client.username + "?")) {
-                    approveCheckout(next);
-                }
-            } else if (choice.equals("2")) {
-                if (checkoutQueue.isEmpty()) {
-                    ui.warning("The checkout queue is empty.");
-                } else {
-                    cancelling = true;
-                }
+            } else if (choice.equalsIgnoreCase("A")) {
+                approveReadyBatch(session);
+            } else if (choice.equalsIgnoreCase("X")) {
+                cancelSessionRequest(session);
             } else {
-                ui.error("Use 1, 2, 0, or M.");
+                ui.error("Use ENTER, A, X, Q, R, 0 or M.");
+            }
+            if (session.entries.size() > entriesBeforeAction) {
+                ui.showCheckoutTapeFooter(session, checkoutQueue, rentalService);
+            } else {
+                ui.showTapeInput();
             }
         }
     }
-    void approveCheckout(RentalRequest request) {
+
+    // Use the real queue policy on copied games; previews never reserve stock.
+    ArrayList<RentalRequest> previewReadyCheckouts() {
+        CheckoutQueue previewQueue = new CheckoutQueue();
+        previewQueue.vipStreak = checkoutQueue.vipStreak;
+        LinkedHashMap<Game, Game> stockCopies = new LinkedHashMap<>();
+        for (RentalRequest request : checkoutQueue.getRequests()) {
+            if (!CheckoutQueue.validRequest(request)) {
+                continue;
+            }
+            Game copiedGame = stockCopies.get(request.game);
+            if (copiedGame == null && request.game != null) {
+                copiedGame = new Game(request.game.gameId, request.game.title, request.game.platform,
+                    request.game.price, request.game.availableCopies);
+                stockCopies.put(request.game, copiedGame);
+            }
+            RentalRequest copiedRequest = new RentalRequest(request.queueNumber, request.client, copiedGame);
+            copiedRequest.vip = request.vip;
+            copiedRequest.quantity = request.quantity;
+            copiedRequest.rentalDays = request.rentalDays;
+            previewQueue.enqueue(copiedRequest);
+        }
+        ArrayList<RentalRequest> planned = new ArrayList<>();
+        RentalRequest next = previewQueue.findNextEligibleRequest();
+        while (next != null) {
+            planned.add(checkoutQueue.findByNumber(next.queueNumber));
+            next.game.availableCopies -= next.quantity;
+            previewQueue.recordCheckout(next);
+            previewQueue.remove(next);
+            next = previewQueue.findNextEligibleRequest();
+        }
+        return planned;
+    }
+
+    void approveReadyBatch(CheckoutSession session) {
+        ArrayList<RentalRequest> planned = previewReadyCheckouts();
+        if (planned.isEmpty()) {
+            ui.warning("No request is ready.");
+            return;
+        }
+        ui.showCheckoutBatch(planned, checkoutQueue, rentalService);
+        if (!ui.confirmCheckoutBatch(planned.size())) {
+            return;
+        }
+        for (RentalRequest request : planned) {
+            if (checkoutQueue.findNextEligibleRequest() != request) {
+                ui.error("Batch stopped at " + ui.queueLabel(request.queueNumber) + ": queue changed.");
+                return;
+            }
+            if (!approveSessionRequest(request, session)) {
+                return;
+            }
+        }
+    }
+
+    boolean approveSessionRequest(RentalRequest request, CheckoutSession session) {
+        String error = rentalService.validateCheckout(request);
+        if (error != null) {
+            ui.error("Checkout " + ui.queueLabel(request.queueNumber) + " failed: " + error);
+            return false;
+        }
+        try {
+            Rental rental = approveCheckout(request);
+            if (rental == null) {
+                return false;
+            }
+            session.addRental(rental);
+            ui.showApprovedSlip(rental, session.entries.size());
+            return true;
+        } catch (StorageException e) {
+            ui.error("Checkout " + ui.queueLabel(request.queueNumber) + " failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    void cancelSessionRequest(CheckoutSession session) {
+        ui.inputBar("QUEUE NUMBER TO CANCEL", ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH, "[0] Back");
+        String input = ui.readText(ui.prompt(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH));
+        if (input.equals("0")) {
+            return;
+        }
+        RentalRequest request;
+        try {
+            request = checkoutQueue.findByNumber(Integer.parseInt(input));
+        } catch (NumberFormatException e) {
+            ui.error("Enter a valid queue number.");
+            return;
+        }
+        if (request == null) {
+            ui.error("Request not found.");
+            return;
+        }
+        if (ui.confirmCheckoutCancellation(request)) {
+            try {
+                checkoutQueue.remove(request);
+                logAdmin("Cancelled queue request " + ui.queueLabel(request.queueNumber)
+                    + ": " + request.client.username);
+                dataStore.saveQueue();
+            } catch (StorageException e) {
+                ui.error("Cancellation " + ui.queueLabel(request.queueNumber) + " failed: " + e.getMessage());
+                return;
+            }
+            session.addCancellation(request);
+            ui.showCancelledSlip(request, session.entries.size());
+        }
+    }
+
+    Rental approveCheckout(RentalRequest request) {
         String error = rentalService.validateCheckout(request);
         if (error != null) {
             ui.error(error);
-            return;
+            return null;
         }
         Rental rental = rentalService.checkout(request, nextRentalNumber);
         nextRentalNumber++;
@@ -1074,7 +1204,7 @@ public class GameRentalSystem {
             + " - " + request.game.title + " x" + request.quantity);
 
         dataStore.saveData();
-        ui.showCheckoutApproved(rental);
+        return rental;
     }
 
     Rental selectActiveRentalForReturn() {
