@@ -1,14 +1,14 @@
 #COUNTERS|4|4|4
 # GAME ID|TITLE|PLATFORM|PRICE|AVAILABLE COPIES
-P001|Spider-Man 2|PS5|5.0|4
-P002|Minecraft|PS5|4.0|3
-P003|God of War|PS5|5.5|0
-X001|Halo Infinite|Xbox|4.5|4
-X002|Forza Horizon 5|Xbox|5.0|0
-X003|Minecraft|Xbox|4.0|4
-N001|Mario Kart 8|Nintendo|5.0|1
+P001|Spider-Man 2|PS5|5.0|6
+P002|Minecraft|PS5|4.0|4
+P003|God of War|PS5|5.5|5
+X001|Halo Infinite|Xbox|4.5|5
+X002|Forza Horizon 5|Xbox|5.0|1
+X003|Minecraft|Xbox|4.0|5
+N001|Mario Kart 8|Nintendo|5.0|2
 N002|Zelda: Tears of the Kingdom|Nintendo|6.0|1
-N003|Animal Crossing|Nintendo|4.5|0
+N003|Animal Crossing|Nintendo|4.5|1
 X004|test|Xbox|6.0|5
 P004|Butterbonia Game|PS5|2.0|7
 N004|MLBB|Nintendo|1.0|8

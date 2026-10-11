@@ -10,14 +10,17 @@ class RentalDataStore {
     private Snapshot committed;
     private static final DateTimeFormatter LOG_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    // Connect file loading and saving to the shared application data.
     RentalDataStore(Queue2Play system) {
         this.system = system;
     }
 
+    // Return a data-file path through the shared storage object.
     Path file(String name) {
         return storage.file(name);
     }
 
+    // Copy current state so a failed save can restore it.
     void checkpoint() {
         committed = new Snapshot(system);
     }
@@ -26,12 +29,14 @@ class RentalDataStore {
     static class Record {
         final String[] fields;
         final int lineNumber;
+        // Keep a parsed row with its file line number for error reporting.
         Record(String[] fields, int lineNumber) {
             this.fields = fields;
             this.lineNumber = lineNumber;
         }
     }
 
+    // Read nonempty data rows and split their fields for validation.
     List<Record> records(String name) {
         List<Record> records = new ArrayList<>();
         Path path = file(name);
@@ -53,29 +58,34 @@ class RentalDataStore {
         return records;
     }
 
+    // Report the data file and line that failed validation.
     StorageException invalidRecord(String name, Record record, RuntimeException cause) {
         return new StorageException(name + " line " + record.lineNumber + ": " + cause.getMessage()
             + ". Original data was kept. Correct this line before continuing.", cause);
     }
 
+    // Reject a condition that would break a data rule.
     static void require(boolean condition, String message) {
         if (!condition) {
             throw new IllegalArgumentException(message);
         }
     }
 
+    // Parse and validate a positive record number.
     static int positive(String text) {
         int number = Integer.parseInt(text);
         require(number > 0 && number < Integer.MAX_VALUE, "Invalid record number");
         return number;
     }
 
+    // Parse and validate a saved next-record counter.
     static int counter(String text) {
         int value = Integer.parseInt(text);
         require(value > 0, "Invalid counter");
         return value;
     }
 
+    // Validate and save all data; restore the snapshot if saving fails.
     void saveData() {
         try {
             storage.commit(serialized());
@@ -88,14 +98,17 @@ class RentalDataStore {
         }
     }
 
+    // Save inventory together with the related account, queue and rental data.
     void saveGames() {
         saveData();
     }
 
+    // Save the queue together with the related application data.
     void saveQueue() {
         saveData();
     }
 
+    // Build the text contents for all saved data files.
     private Map<String, String> serialized() {
         validateState();
         Map<String, String> files = new LinkedHashMap<>();
@@ -144,6 +157,7 @@ class RentalDataStore {
         return files;
     }
 
+    // Use sets and shared rules to reject duplicates and inconsistent records.
     private void validateState() {
         Set<String> logins = new HashSet<>();
         for (User user : system.users) {
@@ -165,7 +179,12 @@ class RentalDataStore {
             require(system.users.contains(rental.client) && !rental.client.isAdmin(), "Unknown rental client");
             require(rental.quantity >= 1 && rental.quantity <= Queue2Play.MAX_SAVED_COPIES_PER_GAME && Double.isFinite(rental.amount) && rental.amount >= 0, "Invalid rental amount or quantity");
             require(rental.checkoutDate != null && rental.dueDate != null && rental.dueDate.isAfter(rental.checkoutDate), "Invalid rental dates");
-            require(rental.status.equals("ACTIVE") || rental.status.equals("COMPLETED"), "Invalid rental status");
+            require(rental.status.equals("ACTIVE") || rental.status.equals("COMPLETED")
+                || rental.status.equals("CANCELLED"), "Invalid rental status");
+            if (rental.status.equals("CANCELLED")) {
+                require(rental.amount == 0 && rental.returnDate == null && rental.daysLate == 0
+                    && rental.lateFee == 0, "Cancelled history must have no charges or return");
+            }
             require(rental.daysLate >= 0 && Double.isFinite(rental.lateFee) && rental.lateFee >= 0, "Invalid late fee");
             if (rental.status.equals("ACTIVE")) {
                 require(system.games.get(rental.game.gameId) == rental.game && system.activeRentals.contains(rental), "Active rental has no canonical game or heap entry");
@@ -189,6 +208,7 @@ class RentalDataStore {
         }
     }
 
+    // Validate saved games and rebuild the inventory map and ID counters.
     void loadGames() {
         if (!Files.exists(file("games.txt"))) {
             system.gameCatalog.loadStartingGames();
@@ -229,6 +249,7 @@ class RentalDataStore {
         }
     }
 
+    // Load rental records, refill the active heap and rebuild history stacks.
     void loadRentals() {
         Set<Integer> numbers = new HashSet<>();
         for (RentalDataStore.Record record : records("rentals.txt")) {
@@ -244,10 +265,11 @@ class RentalDataStore {
                 require(numbers.add(number), "Duplicate rental number");
                 User client = system.accountService.findUser(fields[1]);
                 require(client != null && !client.isAdmin(), "Unknown client");
-                require(fields[8].equals("ACTIVE") || fields[8].equals("COMPLETED"), "Invalid rental status");
+                require(fields[8].equals("ACTIVE") || fields[8].equals("COMPLETED")
+                    || fields[8].equals("CANCELLED"), "Invalid rental status");
                 Game game = system.games.get(fields[2]);
                 if (game == null) {
-                    require(fields[8].equals("COMPLETED"), "Active rental refers to a missing game");
+                    require(!fields[8].equals("ACTIVE"), "Active rental refers to a missing game");
                     require(GameCatalog.validId(fields[2], fields[4]), "Invalid historical game");
                     require(GameCatalog.validTitle(fields[3]), "Invalid historical title");
                     game = new Game(fields[2], fields[3], fields[4], 1, 0);
@@ -281,6 +303,10 @@ class RentalDataStore {
                             && rental.lateFee == system.rentalService.calculateLateFee(rental, rental.daysLate), "Return fee does not match the date");
                     }
                 }
+                if (rental.status.equals("CANCELLED")) {
+                    require(rental.amount == 0 && rental.returnDate == null && rental.daysLate == 0
+                        && rental.lateFee == 0, "Cancelled history must have no charges or return");
+                }
                 if (rental.status.equals("ACTIVE")) {
                     require(system.rentalService.activeCopies(client, game) <= Queue2Play.MAX_SAVED_COPIES_PER_GAME - quantity,
                         "Active client/game quantity exceeds the limit");
@@ -306,6 +332,7 @@ class RentalDataStore {
         }
     }
 
+    // Use insertion sort to restore saved history record order.
     private void sortRentalsByNumber() {
         for (int i = 1; i < system.allRentals.size(); i++) {
             Rental current = system.allRentals.get(i);
@@ -318,6 +345,7 @@ class RentalDataStore {
         }
     }
 
+    // Validate requests, sort arrivals and rebuild the linked checkout queue.
     void loadQueue() {
         Set<Integer> numbers = new HashSet<>();
         ArrayList<RentalRequest> requests = new ArrayList<>();
@@ -370,6 +398,7 @@ class RentalDataStore {
         }
     }
 
+    // Read current timestamps or convert older date-only records.
     private LocalDateTime parseDate(String text, boolean end) {
         try {
             return LocalDateTime.parse(text);
@@ -382,15 +411,18 @@ class RentalDataStore {
         }
     }
 
+    // Add the current timestamp before appending a log record.
     void writeLog(String type, String message) {
         writeLogRecord(LocalDateTime.now().format(LOG_TIME), type, message);
     }
 
+    // Append a validated timestamp, event type and message to the log list.
     void writeLogRecord(String stamp, String type, String message) {
         require(!stamp.contains("|") && !type.contains("|") && !message.contains("\n") && !message.contains("\r"), "Invalid log record");
         system.logRecords.add(stamp + "|" + type + "|" + message);
     }
 
+    // Restore saved logs and push admin entries onto the audit stack.
     void loadLogs() {
         Path path = file("logs.txt");
         if (!Files.exists(path)) {
@@ -438,6 +470,7 @@ class RentalDataStore {
         final int xboxCounter;
         final int nintendoCounter;
         final int streak;
+        // Copy lists and field values needed to undo an unsuccessful save.
         Snapshot(Queue2Play system) {
             users = new ArrayList<>(system.users);
             games = new ArrayList<>(system.games.values());
@@ -477,6 +510,7 @@ class RentalDataStore {
             nintendoCounter = system.gameCatalog.nintendoCount;
             streak = system.checkoutQueue.vipStreak;
         }
+        // Restore saved state, including links, heap entries and history stacks.
         void restore(Queue2Play system) {
             system.users.clear();
             system.users.addAll(users);

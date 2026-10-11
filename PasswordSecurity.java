@@ -8,10 +8,12 @@ final class PasswordSecurity {
     private static final int ITERATIONS = 210000;
     private static final SecureRandom RANDOM = new SecureRandom();
 
+    // Check whether a saved password uses the PBKDF2 format.
     static boolean isHash(String value) {
         return value != null && value.startsWith("pbkdf2$");
     }
 
+    // Keep a valid existing hash or hash a plaintext password.
     static String hash(String password) {
         if (password == null) {
             return null;
@@ -23,6 +25,7 @@ final class PasswordSecurity {
         return hashPlaintext(password);
     }
 
+    // Create a salted PBKDF2 password hash for safe storage.
     static String hashPlaintext(String password) {
         if (password == null) {
             throw new IllegalArgumentException("Password is required.");
@@ -33,6 +36,7 @@ final class PasswordSecurity {
         + "$" + Base64.getEncoder().encodeToString(derive(password, salt, ITERATIONS));
     }
 
+    // Check the saved hash format, iteration count, salt and key length.
     static void validateHash(String encoded) {
         String[] p = encoded.split("\\$", -1);
         if (p.length != 4 || !p[0].equals("pbkdf2")) {
@@ -45,6 +49,7 @@ final class PasswordSecurity {
         }
     }
 
+    // Verify a password against its saved hash without exposing the password.
     static boolean matches(String password, String encoded) {
         if (password == null || encoded == null) {
             return false;
@@ -59,6 +64,7 @@ final class PasswordSecurity {
         }
     }
 
+    // Use Java's PBKDF2 implementation to derive the password key.
     private static byte[] derive(String password, byte[] salt, int iterations) {
         PBEKeySpec spec = new PBEKeySpec(password.toCharArray(), salt, iterations, 256);
         try {

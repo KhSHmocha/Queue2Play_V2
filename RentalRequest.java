@@ -7,6 +7,7 @@ class RentalRequest {
     int quantity = 1;       // copies of the game requested in the order
 
 
+    // Store the client, game and membership for a queued order line.
     RentalRequest(int queueNumber, User client, Game game) {
         this.queueNumber = queueNumber;
         this.client = client;

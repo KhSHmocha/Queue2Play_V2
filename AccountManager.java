@@ -8,25 +8,30 @@ class AccountManager {
     private int failedLoginAttempts;
     private final String unknownPasswordHash = PasswordSecurity.hashPlaintext("Unknown account");
 
+    // Connect account validation, login and registration to storage.
     AccountManager(ArrayList<User> users, TerminalUI ui, RentalDataStore dataStore) {
         this.users = users;
         this.ui = ui;
         this.dataStore = dataStore;
     }
 
+    // Check usernames using the saved-account rules.
     static boolean validUsername(String value) {
         return value != null && value.matches("[A-Za-z0-9_.-]{3,32}") && !value.equalsIgnoreCase("C") && !value.equals("0");
     }
 
+    // Check names using the saved-account rules.
     static boolean validName(String value) {
         return value != null && value.length() <= 100 && value.matches("[\\p{L}][\\p{L}\\p{M} .'-]{1,99}");
     }
 
+    // Check emails using the saved-account rules.
     static boolean validEmail(String value) {
         return value != null && value.length() <= 254 && value.matches("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
     }
 
     // Keep the older validators above for saved accounts. New accounts use these rules.
+    // Check the length, letters, spaces and dots of a new name.
     static boolean validRegistrationName(String value) {
         if (value == null || value.length() < 5 || value.length() > 60) {
             return false;
@@ -43,6 +48,7 @@ class AccountManager {
         return letters >= 2 && Character.isLetter(value.charAt(0));
     }
 
+    // Check a new username and require at least one letter.
     static boolean validRegistrationUsername(String value) {
         if (value == null || !value.matches("[A-Za-z0-9_.-]{3,20}")) {
             return false;
@@ -55,6 +61,7 @@ class AccountManager {
         return false;
     }
 
+    // Reject long emails and invalid local or domain parts.
     static boolean validRegistrationEmail(String value) {
         if (!validEmail(value) || value.length() > 100) {
             return false;
@@ -74,6 +81,7 @@ class AccountManager {
         return true;
     }
 
+    // Check password length and reject spaces or file separators.
     static boolean validRegistrationPassword(String value) {
         if (value == null || value.length() < 8 || value.length() > 20) {
             return false;
@@ -90,10 +98,12 @@ class AccountManager {
 
     private boolean embeddedAccountsChanged;
 
+    // Tell startup whether built-in accounts need saving.
     boolean embeddedAccountsChanged() {
         return embeddedAccountsChanged;
     }
 
+    // Load valid accounts into the list and restore built-in logins.
     void loadAccounts() {
         for (RentalDataStore.Record record : dataStore.records("accounts.txt")) {
             String[] fields = record.fields;
@@ -116,6 +126,7 @@ class AccountManager {
         ensureEmbeddedAccount("juan", "Juan D. Cruz", "juan@email.com", "juan12345", "CLIENT", "REGULAR");
     }
 
+    // Create or restore a built-in account while keeping client upgrades.
     private void ensureEmbeddedAccount(String username, String name, String email, String password, String role, String membership) {
         User account = findUser(username);
         User emailOwner = findUserByLogin(email);
@@ -148,10 +159,12 @@ class AccountManager {
         }
     }
 
+    // Save accounts with the other related data files.
     void saveAccounts() {
         dataStore.saveData();
     }
 
+    // Use linear search to find a username, ignoring case.
     User findUser(String username) {
         for (User user : users) {
             if (user.username.equalsIgnoreCase(username)) {
@@ -161,6 +174,7 @@ class AccountManager {
         return null;
     }
 
+    // Use linear search to find a username or email, ignoring case.
     User findUserByLogin(String login) {
         // Deterministic username lookup, with uniqueness enforced when registering/loading.
         User byName = findUser(login);
@@ -175,10 +189,12 @@ class AccountManager {
         return null;
     }
 
+    // Check whether an email already matches a login identifier.
     boolean emailExists(String email) {
         return findUserByLogin(email) != null;
     }
 
+    // Confirm discarding the unsaved account details.
     private boolean cancelRegistration() {
         if (ui.confirmRegistrationCancellation()) {
             ui.info("Registration cancelled. No account was created.");
@@ -187,6 +203,7 @@ class AccountManager {
         return false;
     }
 
+    // Collect, validate and save a new account; keep drafts when editing.
     void register() {
         String fullName = "";
         String username = "";
@@ -319,6 +336,7 @@ class AccountManager {
         ui.waitForResultNavigation("", "Main Menu");
     }
 
+    // Record a failed attempt and apply the three-attempt cooldown.
     private void failedLogin(String login) {
         failedLoginAttempts++;
         ui.error("Incorrect username/email or password.");
@@ -331,6 +349,7 @@ class AccountManager {
         dataStore.saveData();
     }
 
+    // Check username or email and password, then return the signed-in user.
     User login() {
         while (true) {
             ui.clearScreen();

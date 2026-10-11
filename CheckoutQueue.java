@@ -7,6 +7,7 @@ public class CheckoutQueue {
         final RentalRequest request;
         Node previous;
         Node next;
+        // Store one request and its links to nearby queue nodes.
         Node(RentalRequest request) {
             this.request = request;
         }
@@ -17,11 +18,13 @@ public class CheckoutQueue {
     static final int VIP_BURST = 3;
     int vipStreak;
 
+    // Empty the linked queue by clearing its front and rear links.
     void clear() {
         front = null;
         rear = null;
     }
 
+    // Update VIP flags and rebuild queue groups in arrival order.
     void refreshMembership(User client) {
         ArrayList<RentalRequest> requests = getRequests();
         for (RentalRequest request : requests) {
@@ -36,7 +39,7 @@ public class CheckoutQueue {
         }
     }
 
-    // Insertion sort restores arrival order before rebuilding VIP/regular groups.
+    // Use stable insertion sort to restore request arrival order; worst O(n squared).
     static void sortByQueueNumber(ArrayList<RentalRequest> requests) {
         for (int i = 1; i < requests.size(); i++) {
             RentalRequest current = requests.get(i);
@@ -49,12 +52,14 @@ public class CheckoutQueue {
         }
     }
 
+    // Check the client, game, number, quantity and duration of a request.
     static boolean validRequest(RentalRequest request) {
         return request != null && request.client != null && request.game != null && !request.client.isAdmin()
             && request.queueNumber > 0 && request.quantity >= 1 && request.quantity <= Queue2Play.MAX_SAVED_COPIES_PER_GAME
             && request.rentalDays >= 1 && request.rentalDays <= Queue2Play.MAX_RENTAL_DAYS;
     }
 
+    // Update the VIP streak after an actual checkout.
     void recordCheckout(RentalRequest request) {
         if (request.vip) {
             if (vipStreak < VIP_BURST) {
@@ -65,10 +70,12 @@ public class CheckoutQueue {
         }
     }
 
+    // Check whether the linked queue has no front node.
     boolean isEmpty() {
         return front == null;
     }
 
+    // Link a request into its VIP or regular group, keeping arrival order.
     void enqueue(RentalRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("Request cannot be null.");
@@ -95,6 +102,7 @@ public class CheckoutQueue {
         rear = node;
     }
 
+    // Connect a new node before another node in the doubly linked list.
     private void insertBefore(Node target, Node node) {
         node.next = target;
         node.previous = target.previous;
@@ -106,6 +114,7 @@ public class CheckoutQueue {
         target.previous = node;
     }
 
+    // Find a request by traversal and unlink its queue node.
     void remove(RentalRequest request) {
         for (Node current = front; current != null; current = current.next) {
             if (current.request == request) {
@@ -115,6 +124,7 @@ public class CheckoutQueue {
         }
     }
 
+    // Reconnect nearby nodes when removing a queue node.
     private void unlink(Node node) {
         if (node.previous == null) {
             front = node.next;
@@ -130,6 +140,7 @@ public class CheckoutQueue {
         node.next = null;
     }
 
+    // Traverse the linked queue to count requests for one game.
     int countRequestsForGame(Game game) {
         int count = 0;
         for (Node current = front; current != null; current = current.next) {
@@ -140,6 +151,7 @@ public class CheckoutQueue {
         return count;
     }
 
+    // Traverse and unlink all requests for a deleted game.
     int removeRequestsForGame(Game game) {
         int removed = 0;
         Node current = front;
@@ -154,6 +166,7 @@ public class CheckoutQueue {
         return removed;
     }
 
+    // Use linear search to check a client's queued game.
     boolean hasRequest(User client, Game game) {
         for (Node current = front; current != null; current = current.next) {
             if (RentalManager.sameUser(current.request.client, client) && RentalManager.sameGame(current.request.game, game)) {
@@ -163,6 +176,7 @@ public class CheckoutQueue {
         return false;
     }
 
+    // Traverse the queue to total a client's requested copies of one game.
     int queuedCopies(User client, Game game) {
         int copies = 0;
         for (Node current = front; current != null; current = current.next) {
@@ -174,6 +188,7 @@ public class CheckoutQueue {
         return copies;
     }
 
+    // Use linear search through queue nodes to find a request number.
     RentalRequest findByNumber(int queueNumber) {
         for (Node current = front; current != null; current = current.next) {
             if (current.request.queueNumber == queueNumber) {
@@ -183,6 +198,7 @@ public class CheckoutQueue {
         return null;
     }
 
+    // Copy one client's queued requests into a list for display.
     ArrayList<RentalRequest> getRequestsOf(User client) {
         ArrayList<RentalRequest> requests = new ArrayList<>();
         for (Node current = front; current != null; current = current.next) {
@@ -193,11 +209,12 @@ public class CheckoutQueue {
         return requests;
     }
 
+    // Find the request's predicted ready position; zero means waiting.
     int getPosition(RentalRequest request) {
         return previewReadyRequests().indexOf(request) + 1;
     }
 
-    // Ready requests come first; waiting requests keep their existing relative order.
+    // List predicted ready requests first, then waiting requests.
     ArrayList<RentalRequest> getDisplayRequests(ArrayList<RentalRequest> ready) {
         ArrayList<RentalRequest> displayed = new ArrayList<>(ready);
         for (RentalRequest request : getRequests()) {
@@ -208,6 +225,7 @@ public class CheckoutQueue {
         return displayed;
     }
 
+    // Traverse for enough stock and apply the three-VIP fairness rule.
     RentalRequest findNextEligibleRequest() {
         if (vipStreak >= VIP_BURST) {
             for (Node current = front; current != null; current = current.next) {
@@ -226,7 +244,7 @@ public class CheckoutQueue {
         return null;
     }
 
-    // A snapshot lets screens and file storage read requests without accessing links.
+    // Copy linked queue entries into a list without changing their links.
     ArrayList<RentalRequest> getRequests() {
         ArrayList<RentalRequest> requests = new ArrayList<>();
         for (Node current = front; current != null; current = current.next) {
@@ -234,7 +252,7 @@ public class CheckoutQueue {
         }
         return requests;
     }
-    // Use the real queue policy on copied games; previews never reserve stock.
+    // Simulate queue fairness on copied stock to predict processing order.
     ArrayList<RentalRequest> previewReadyRequests() {
         CheckoutQueue previewQueue = new CheckoutQueue();
         previewQueue.vipStreak = vipStreak;

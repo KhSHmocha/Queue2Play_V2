@@ -1,10 +1,19 @@
 Run from the project folder in PowerShell with a Java JDK on PATH:
 
+Active-rental checks cover up to nine records per page, smaller height-based
+pages, and complete pages with navigation at 120/81 columns and 50/30 rows.
+The separate Overdue Rentals menu has been removed; return late fees remain.
+New administrator cancellations save zero-charge CANCELLED customer history
+records using the existing history record counter. They never enter active
+rentals or change stock/VIP streak. Tests check No, Yes, restart, and save-failure
+rollback. Old cancelled requests are not reconstructed. VIP price text reads
+Free lifetime membership.
+
 ```powershell
 $sources = Get-ChildItem -LiteralPath . -Filter '*.java' | Select-Object -ExpandProperty FullName
 $testBuild = Join-Path (Get-Location) ('test-run-' + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $testBuild | Out-Null
-javac -encoding UTF-8 -d $testBuild $sources tests/BehaviorRegressionTest.java
+javac -encoding UTF-8 -d $testBuild $sources 'Backfiles testing/tests/BehaviorRegressionTest.java'
 java "-Djava.io.tmpdir=$testBuild" -cp $testBuild BehaviorRegressionTest
 ```
 

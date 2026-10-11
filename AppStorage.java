@@ -12,6 +12,7 @@ final class AppStorage {
     private final Path journal;
     private final Map<String, byte[]> original = new LinkedHashMap<>();
 
+    // Open the data folder and recover any interrupted save.
     AppStorage() {
         String configured = System.getProperty("q2p.dataDir", System.getenv("Q2P_DATA_DIR"));
         try {
@@ -49,6 +50,7 @@ final class AppStorage {
         }
     }
 
+    // Check whether the data folder already contains saved records.
     private boolean hasSavedFiles() {
         for (String name : FILES) {
             if (Files.exists(file(name))) {
@@ -58,14 +60,17 @@ final class AppStorage {
         return false;
     }
 
+    // Return the path of a named data file.
     Path file(String name) {
         return directory.resolve(name);
     }
 
+    // Open the lock file used to prevent simultaneous saves.
     private FileChannel lockChannel() throws IOException {
         return FileChannel.open(directory.resolve(".lock"), StandardOpenOption.CREATE, StandardOpenOption.WRITE);
     }
 
+    // Keep file bytes in a map to detect outside changes before saving.
     private void rememberFiles() throws IOException {
         original.clear();
         for (String name : FILES) {
@@ -81,6 +86,7 @@ final class AppStorage {
         }
     }
 
+    // Write all bytes and flush them before replacing a saved file.
     private static void durableWrite(Path path, byte[] bytes) throws IOException {
         try (FileChannel channel = FileChannel.open(path, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
             ByteBuffer buffer = ByteBuffer.wrap(bytes);
@@ -91,6 +97,7 @@ final class AppStorage {
         }
     }
 
+    // Replace a file, using an atomic move when supported.
     private static void replace(Path from, Path to) throws IOException {
         try {
             Files.move(from, to, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
@@ -99,6 +106,7 @@ final class AppStorage {
         }
     }
 
+    // Delete only the known temporary transaction files.
     private void cleanJournal() throws IOException {
         if (!Files.exists(journal)) {
             return;
@@ -113,6 +121,7 @@ final class AppStorage {
         Files.delete(journal);
     }
 
+    // Restore files from an interrupted transaction before cleanup.
     private void recover() throws IOException {
         if (!Files.exists(journal)) {
             return;
@@ -132,6 +141,7 @@ final class AppStorage {
         cleanJournal();
     }
 
+    // Save related files together with locking and interrupted-save recovery.
     synchronized void commit(Map<String, String> contents) {
         boolean startedJournal = false;
         try (FileChannel channel = lockChannel(); FileLock lock = channel.tryLock()) {
@@ -159,11 +169,6 @@ final class AppStorage {
                 if (original.get(name) != null) {
                     existed.add(name);
                     durableWrite(journal.resolve(name + ".old"), original.get(name));
-                    // Preserve the first pre-upgrade copy. Loading alone never rewrites records.
-                    Path backup = file(name + ".bak");
-                    if (!Files.exists(backup)) {
-                        Files.copy(file(name), backup);
-                    }
                 }
                 durableWrite(journal.resolve(name + ".new"), contents.get(name).getBytes(java.nio.charset.StandardCharsets.UTF_8));
             }

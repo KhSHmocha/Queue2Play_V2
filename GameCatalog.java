@@ -2,11 +2,13 @@ import java.util.ArrayList;
 import java.util.Map;
 // Owns inventory lookup and the search/sort algorithms used by the menus.
 class GameCatalog {
+    // Reject empty, long or unsafe game titles.
     static boolean validTitle(String title) {
         return title != null && !title.isBlank() && title.length() <= 100 && !title.contains("|")
         && !containsControlCharacter(title);
     }
 
+    // Scan characters to detect unsafe control codes.
     static boolean containsControlCharacter(String value) {
         for (int index = 0; index < value.length(); index++) {
             if (Character.isISOControl(value.charAt(index))) {
@@ -16,6 +18,7 @@ class GameCatalog {
         return false;
     }
 
+    // Check the platform prefix and numeric part of a game identifier.
     static boolean validId(String id, String platform) {
         String prefix;
         if (platform.equals("PS5")) {
@@ -38,6 +41,7 @@ class GameCatalog {
         }
     }
 
+    // Reject invalid game titles, platforms, prices or stock.
     static void validate(String title, String platform, double price, int stock) {
         RentalDataStore.require(validTitle(title), "Invalid game title");
         RentalDataStore.require(platform.equals("PS5") || platform.equals("Xbox") || platform.equals("Nintendo"), "Invalid platform");
@@ -51,10 +55,12 @@ class GameCatalog {
     int xboxCount;
     int nintendoCount;
 
+    // Use the shared inventory map for catalog operations.
     GameCatalog(Map<String, Game> games) {
         this.games = games;
     }
 
+    // Create the next numbered identifier for the selected platform.
     String generateGameId(String platform) {
         RentalDataStore.require(platform.equals("PS5") || platform.equals("Xbox") || platform.equals("Nintendo"), "Invalid platform");
         RentalDataStore.require(ps5Count < Integer.MAX_VALUE - 1 && xboxCount < Integer.MAX_VALUE - 1
@@ -71,6 +77,7 @@ class GameCatalog {
         }
     }
 
+    // Reject duplicates, then add a game to the inventory map by ID.
     Game addGame(String title, String platform, double price, int copies) {
         validate(title, platform, price, copies);
         for (Game existing : games.values()) {
@@ -83,6 +90,7 @@ class GameCatalog {
         return game;
     }
 
+    // Create the initial catalog when no games file exists.
     void loadStartingGames() {
         addGame("Spider-Man 2", "PS5", 5.00, 2);
         addGame("Minecraft", "PS5", 4.00, 1);
@@ -95,6 +103,7 @@ class GameCatalog {
         addGame("Animal Crossing", "Nintendo", 4.50, 1);
     }
 
+    // Copy all games or one platform's games into a browsing list.
     ArrayList<Game> getGameList(String platform) {
         ArrayList<Game> list = new ArrayList<>();
         for (Game game : games.values()) {
@@ -105,7 +114,7 @@ class GameCatalog {
         return list;
     }
 
-    // Linear search checks each game in the selected list for a matching ID, title, or platform.
+    // Scan each game for an ID, title or platform match; O(n) time.
     ArrayList<Game> linearSearch(ArrayList<Game> list, String keyword) {
         ArrayList<Game> results = new ArrayList<>();
         String key = keyword.trim().toLowerCase(java.util.Locale.ROOT);
@@ -119,7 +128,7 @@ class GameCatalog {
         return results;
     }
 
-    // Build a fresh view every time: searching always uses the full platform list.
+    // Search the full platform list and sort a copy without changing inventory.
     ArrayList<Game> getDisplayList(ArrayList<Game> platformGames, String keyword, int sortOption) {
         ArrayList<Game> displayGames = linearSearch(platformGames, keyword);
         if (sortOption != 0) {
@@ -128,7 +137,7 @@ class GameCatalog {
         return displayGames;
     }
 
-    // Insertion sort shifts games until each one is placed at its selected title or price position.
+    // Use stable insertion sort for titles or prices; worst O(n squared).
     void insertionSort(ArrayList<Game> list, int option) {
         RentalDataStore.require(option >= 1 && option <= 4, "Invalid sort option");
         for (int i = 1; i < list.size(); i++) {
@@ -142,6 +151,7 @@ class GameCatalog {
         }
     }
 
+    // Compare two games to decide whether insertion sort should shift one.
     private boolean shouldMoveRight(Game left, Game current, int option) {
         if (option == 1) {
             return left.title.compareToIgnoreCase(current.title) > 0;
@@ -154,6 +164,7 @@ class GameCatalog {
         }
     }
 
+    // Update platform counters so loaded game IDs are not reused.
     void updateCounterFromId(String id) {
         if (id.length() < 2) {
             return;

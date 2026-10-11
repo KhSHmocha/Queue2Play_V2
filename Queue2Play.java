@@ -50,7 +50,7 @@ public class Queue2Play {
     // Min-heap: peek gives the active rental with the earliest due date.
     PriorityQueue<Rental> activeRentals = new PriorityQueue<>();
 
-    // Every rental ever made (active and completed), in rental-number order.
+    // ArrayList keeps active, completed and cancelled history records in number order.
     ArrayList<Rental> allRentals = new ArrayList<>();
 
     // Stack: admin actions are displayed newest first.
@@ -64,6 +64,7 @@ public class Queue2Play {
     private String selectedRentalPlatform = "";
     private String rentalSelectionDestination = "Dashboard";
 
+    // Confirm discarding a nonempty cart before leaving for Dashboard.
     private boolean confirmRentalDashboard(LinkedHashMap<Game, Integer> cart) {
         if (cart != null && !cart.isEmpty() && !ui.confirmDiscardCart()) {
             return false;
@@ -72,6 +73,7 @@ public class Queue2Play {
         return true;
     }
 
+    // Convert a numeric choice, treating Back as zero.
     private int parseMenuChoice(String text) {
         if (text.equalsIgnoreCase("B")) {
             return 0;
@@ -79,6 +81,7 @@ public class Queue2Play {
         return Integer.parseInt(text);
     }
 
+    // Read a menu number or exit key without crashing on invalid text.
     private int readMenuChoice(String exitKey) {
         String text = ui.readText(ui.prompt());
         if (text.equalsIgnoreCase(exitKey)) {
@@ -91,7 +94,7 @@ public class Queue2Play {
         }
     }
 
-    // Empty screens wait for a named destination instead of disappearing.
+    // Keep a result visible until Back or Dashboard is selected.
     private void waitForScreenNavigation(String destination, boolean allowDashboard) {
         while (true) {
             if (allowDashboard) {
@@ -112,6 +115,7 @@ public class Queue2Play {
         }
     }
 
+    // Connect the interface, catalog, accounts, rentals and storage.
     Queue2Play() {
         dataStore = new RentalDataStore(this);
         accountService = new AccountManager(users, ui, dataStore);
@@ -119,21 +123,24 @@ public class Queue2Play {
         rentalService = new RentalManager(checkoutQueue, activeRentals, allRentals, games);
     }
 
+    // Mark that the current function should return to Dashboard.
     void requestDashboardReturn() {
         dashboardReturnRequested = true;
     }
 
+    // Check whether a nested screen requested Dashboard.
     boolean isDashboardReturnRequested() {
         return dashboardReturnRequested;
     }
 
+    // Reset the Dashboard request before starting another function.
     void clearDashboardReturnRequest() {
         dashboardReturnRequested = false;
     }
 
     // Start, main menu
 
-    // Load saved data once, then keep showing the main menu until exit is chosen.
+    // Load saved data and run the main menu until the user exits.
     public void start() {
         accountService.loadAccounts();
         dataStore.loadGames();
@@ -179,31 +186,31 @@ public class Queue2Play {
         }
     }
 
+    // Add a timestamped event to the log records for saving.
     void writeLog(String type, String message) {
         dataStore.writeLog(type, message);
     }
 
-    // Admin action: goes on the audit log Stack AND into logs.txt
+    // Push an admin action onto the audit stack and add it to saved logs.
     void logAdmin(String message) {
         String timestamp = LocalDateTime.now().format(LOG_STORAGE_FORMAT);
         auditLog.push(timestamp + "|" + message);
         dataStore.writeLogRecord(timestamp, "ADMIN", message);
     }
 
-    // Any other transaction (register, login, queue request, VIP upgrade...)
+    // Record a general event without adding it to the admin audit stack.
     void logEvent(String message) {
         writeLog("EVENT", message);
     }
 
     // Game inventory (hashmap)
 
-    // Paginate game lists without changing their search or sort order.
-    // When selectable is true, the method returns the selected Game.
+    // Browse or select games using shared search, sort and page controls.
     Game paginateGames(ArrayList<Game> list, String title, boolean selectable) {
         return paginateGames(list, title, selectable, null, null, null);
     }
 
-    // Browse and rental selection share one search, sort, and pagination loop.
+    // Browse or select games using shared search, sort and page controls.
     private Game paginateGames(ArrayList<Game> platformGames, String title, boolean selectable,
             User client, LinkedHashMap<Game, Integer> cart, int[] selectedQuantity) {
         int page = 0;
@@ -325,11 +332,12 @@ public class Queue2Play {
             }
         }
     }
-    // Shows the platform menu. Returns "ALL", "PS5", "Xbox", "Nintendo" or "BACK"
+    // Read a platform choice while supporting cart and navigation options.
     String choosePlatform(String heading) {
         return choosePlatform(heading, null);
     }
 
+    // Read a platform choice while supporting cart and navigation options.
     private String choosePlatform(String heading, LinkedHashMap<Game, Integer> cart) {
         String destination = "Dashboard";
         if (heading.startsWith("ADMIN")) {
@@ -383,7 +391,7 @@ public class Queue2Play {
         }
     }
 
-    // View one platform (or all games) with pagination and search.
+    // Display the selected platform's catalog without changing stock.
     void viewGames(String platform) {
         ArrayList<Game> list = gameCatalog.getGameList(platform);
         String title = ui.platformColor(platform) + " GAMES";
@@ -395,6 +403,7 @@ public class Queue2Play {
 
     // Client menu
 
+    // Run the client's dashboard and route its choices.
     void clientMenu(User client) {
         boolean loggedIn = true;
 
@@ -429,10 +438,12 @@ public class Queue2Play {
         }
     }
 
+    // Open platform selection and browse the chosen catalog.
     void browseGames() {
         browseGames(false);
     }
 
+    // Open platform selection and browse the chosen catalog.
     void browseGames(boolean fromInventory) {
         while (true) {
             ui.showBrowseMenu(fromInventory);
@@ -471,7 +482,7 @@ public class Queue2Play {
         }
     }
 
-    // Check existing rentals, requests, and the per-game quantity limit.
+    // Select one displayed game while preserving the current platform.
     Game chooseOneGame(User client, LinkedHashMap<Game, Integer> cart, int[] selectedQuantity) {
         while (true) {
             if (selectedRentalPlatform.isEmpty()) {
@@ -507,6 +518,7 @@ public class Queue2Play {
         }
     }
 
+    // Check stock, active rentals and remaining queued-copy allowance.
     private String validateRentalSelection(User client, LinkedHashMap<Game, Integer> cart, Game game) {
         int inCart = cart.getOrDefault(game, 0);
         int queued = checkoutQueue.queuedCopies(client, game);
@@ -526,12 +538,12 @@ public class Queue2Play {
         return null;
     }
 
-    // The combined cart quantity must fit both stock and the per-game limit.
-    // Returns 0 if the client decides not to add this game after all.
+    // Read a valid quantity within stock and per-game limits.
     int askQuantity(Game game, int inCart) {
         return askQuantity(game, inCart, 0);
     }
 
+    // Read a valid quantity within stock and per-game limits.
     int askQuantity(Game game, int inCart, int queued) {
         int maximumToAdd = MAX_COPIES_PER_GAME - queued - inCart;
         if (game.availableCopies - inCart < maximumToAdd) {
@@ -583,9 +595,7 @@ public class Queue2Play {
         }
     }
 
-    // Game selection + quantity, repeated while the client wants to add more games.
-    // The same game can be added again; its quantity is added to the cart line.
-    // Returns 1 after completing selection, 0 for Back, or a navigation code.
+    // Use a map to combine repeated game selections into one cart line.
     int addGamesToCart(User client, LinkedHashMap<Game, Integer> cart) {
         boolean adding = true;
         while (adding) {
@@ -624,11 +634,12 @@ public class Queue2Play {
         return 1;
     }
 
-    // Returns the number of rental days, or 0 if the client goes back.
+    // Read a preset or custom rental duration within the allowed range.
     int chooseRentalDays() {
         return chooseRentalDays("Select Game");
     }
 
+    // Read a preset or custom rental duration within the allowed range.
     int chooseRentalDays(String previousScreen) {
         while (true) {
             ui.printHeader("SELECT RENTAL DURATION");
@@ -708,12 +719,12 @@ public class Queue2Play {
         }
     }
 
+    // Display cart quantities and duration using the shared order summary.
     void showOrderSummary(User client, LinkedHashMap<Game, Integer> cart, int days) {
         ui.showOrderSummary(client, cart, days, rentalService);
     }
 
-    // "Continue game selection": the order stays in the cart and can be changed.
-    // Back returns to the order summary even if editing emptied the cart.
+    // Edit the existing cart or duration without restarting the order.
     int editOrder(User client, LinkedHashMap<Game, Integer> cart, int days) {
         int page = 0;
         while (true) {
@@ -808,6 +819,7 @@ public class Queue2Play {
         }
     }
 
+    // Recheck the cart before creating any queue requests.
     boolean validateCartBeforeSubmission(User client, LinkedHashMap<Game, Integer> cart) {
         String error = rentalService.validateCart(client, cart);
         if (error != null) {
@@ -817,6 +829,7 @@ public class Queue2Play {
         return true;
     }
 
+    // Create and save one request per distinct cart game without deducting stock.
     void placeInQueue(User client) {
         selectedRentalPlatform = "";
         rentalSelectionDestination = "Dashboard";
@@ -923,6 +936,7 @@ public class Queue2Play {
         ui.finishScreen();
         ui.waitForResultNavigation("", "Dashboard");
     }
+    // Confirm and remove only the client's own queued request.
     void cancelMyRequest(User client) {
         boolean choosingRequest = false;
         int page = 0;
@@ -1040,6 +1054,7 @@ public class Queue2Play {
         }
     }
 
+    // Read the client's history stack from newest to oldest without popping it.
     void viewHistory(User client) {
         if (client.rentalHistory.isEmpty()) {
             ui.printHeader("CLIENT > RENTAL HISTORY", "RENTAL HISTORY");
@@ -1087,6 +1102,7 @@ public class Queue2Play {
         }
     }
 
+    // Confirm membership upgrade and refresh the client's queued priority.
     void upgradeToVip(User client) {
         if (client.isVip()) {
             ui.printHeader("CLIENT > MEMBERSHIP", "VIP MEMBERSHIP");
@@ -1122,6 +1138,7 @@ public class Queue2Play {
 
     // Admin menu
 
+    // Run the admin dashboard and route its choices.
     void adminMenu(User admin) {
         boolean loggedIn = true;
 
@@ -1156,18 +1173,17 @@ public class Queue2Play {
         }
     }
 
+    // Open the active-rental list or return to Dashboard.
     void activeRentalsMenu() {
         while (true) {
             ui.showActiveRentalsMenu();
             String input = ui.readText(ui.prompt());
             if (input.equals("1")) {
                 viewActiveRentals();
-            } else if (input.equals("2")) {
-                viewOverdueItems();
             } else if ((input.equalsIgnoreCase("B") || input.equals("0"))) {
                 return;
             } else {
-                ui.error("Invalid choice. Please enter 1, 2, or B.");
+                ui.error("Invalid choice. Please enter 1 or B.");
             }
             if (isDashboardReturnRequested()) {
                 return;
@@ -1180,6 +1196,7 @@ public class Queue2Play {
         Rental rental;
         RentalRequest cancelled;
 
+        // Store one approval or cancellation for the session tape.
         CheckoutEntry(Rental rental, RentalRequest cancelled) {
             this.rental = rental;
             this.cancelled = cancelled;
@@ -1195,10 +1212,12 @@ public class Queue2Play {
         int copies;
         double total;
 
+        // Start a display session for one administrator.
         CheckoutSession(String admin) {
             this.admin = admin;
         }
 
+        // Append an approval and update the session counts and total.
         void addRental(Rental rental) {
             entries.add(new CheckoutEntry(rental, null));
             approved++;
@@ -1206,16 +1225,19 @@ public class Queue2Play {
             total = Math.round((total + rental.amount) * 100) / 100.0;
         }
 
+        // Append a cancellation and update the session cancellation count.
         void addCancellation(RentalRequest request) {
             entries.add(new CheckoutEntry(null, request));
             cancelled++;
         }
     }
 
+    // Run the admin checkout tape and show its final receipt.
     void checkoutManagement() {
         checkoutManagement("admin");
     }
 
+    // Run the admin checkout tape and show its final receipt.
     void checkoutManagement(String admin) {
         CheckoutSession session = new CheckoutSession(admin);
         try {
@@ -1225,6 +1247,7 @@ public class Queue2Play {
         }
     }
 
+    // Handle approvals, cancellations, queue views and receipt navigation.
     private void runCheckoutSession(CheckoutSession session) {
         ui.showCheckoutQueue(checkoutQueue, rentalService);
         while (true) {
@@ -1289,10 +1312,12 @@ public class Queue2Play {
         }
     }
 
+    // Get predicted ready requests without changing stock or queue state.
     ArrayList<RentalRequest> previewReadyCheckouts() {
         return checkoutQueue.previewReadyRequests();
     }
 
+    // Confirm the preview and approve its ready requests in order.
     void approveReadyBatch(CheckoutSession session) {
         ArrayList<RentalRequest> planned = previewReadyCheckouts();
         if (planned.isEmpty()) {
@@ -1314,6 +1339,7 @@ public class Queue2Play {
         }
     }
 
+    // Validate and approve one request, then append its result slip.
     boolean approveSessionRequest(RentalRequest request, CheckoutSession session) {
         String error = rentalService.validateCheckout(request);
         if (error != null) {
@@ -1334,6 +1360,7 @@ public class Queue2Play {
         }
     }
 
+    // Confirm an admin cancellation and save its customer history record.
     void cancelSessionRequest(CheckoutSession session) {
         ui.inputBar("QUEUE NUMBER TO CANCEL", TerminalUI.CHECKOUT_QUEUE_TABLE_WIDTH, "[B] Checkout   [M] Dashboard");
         String input = ui.readText(ui.prompt(TerminalUI.CHECKOUT_QUEUE_TABLE_WIDTH));
@@ -1357,6 +1384,7 @@ public class Queue2Play {
         }
         if (ui.confirmCheckoutCancellation(request)) {
             try {
+                recordAdminCancellation(request);
                 checkoutQueue.remove(request);
                 logAdmin("Cancelled queue request " + ui.queueLabel(request.queueNumber)
                     + ": " + request.client.username);
@@ -1370,6 +1398,22 @@ public class Queue2Play {
         }
     }
 
+    // Add zero-charge cancelled history without changing stock or active rentals.
+    void recordAdminCancellation(RentalRequest request) {
+        RentalDataStore.require(nextRentalNumber > 0 && nextRentalNumber < Integer.MAX_VALUE,
+            "History record numbers are exhausted");
+        LocalDateTime cancelledAt = LocalDateTime.now();
+        // A cancelled history record never enters the active rentals or changes stock.
+        Rental history = new Rental(nextRentalNumber, request.client, request.game,
+            cancelledAt, cancelledAt.plusDays(request.rentalDays), 0);
+        history.quantity = request.quantity;
+        history.status = "CANCELLED";
+        allRentals.add(history);
+        request.client.rentalHistory.push(history);
+        nextRentalNumber++;
+    }
+
+    // Process and save an eligible queued request as an active rental.
     Rental approveCheckout(RentalRequest request) {
         String error = rentalService.validateCheckout(request);
         if (error != null) {
@@ -1385,6 +1429,7 @@ public class Queue2Play {
         return rental;
     }
 
+    // Use linear search on due-date-ordered rentals to filter return choices.
     ArrayList<Rental> searchReturnRentals(String keyword) {
         ArrayList<Rental> matches = new ArrayList<>();
         String search = keyword.trim().toLowerCase(java.util.Locale.ROOT);
@@ -1399,6 +1444,7 @@ public class Queue2Play {
         return matches;
     }
 
+    // Use a boolean array to reject duplicate rows and keep due-date order.
     ArrayList<Rental> parseReturnSelection(ArrayList<Rental> rentals, int start, int end, String input) {
         boolean[] chosen = new boolean[end - start];
         String[] numbers = input.split(",", -1);
@@ -1430,6 +1476,7 @@ public class Queue2Play {
         return selected;
     }
 
+    // Page and search active rentals to select one or several returns.
     ArrayList<Rental> selectActiveRentalsForReturn() {
         int page = 0;
         String keyword = "";
@@ -1487,6 +1534,7 @@ public class Queue2Play {
         }
     }
 
+    // Check the full batch, restore stock and save all selected returns together.
     void completeSelectedReturns(ArrayList<Rental> selected, LocalDateTime returnedAt) {
         RentalDataStore.require(selected != null && !selected.isEmpty() && returnedAt != null, "Select an active rental to return.");
         LinkedHashMap<Game, Integer> restoredStocks = new LinkedHashMap<>();
@@ -1514,6 +1562,7 @@ public class Queue2Play {
         dataStore.saveData();
     }
 
+    // Confirm selected returns and display the saved results.
     void processReturn() {
         while (true) {
             ArrayList<Rental> selected = selectActiveRentalsForReturn();
@@ -1535,6 +1584,7 @@ public class Queue2Play {
             }
         }
     }
+    // Display a copy of the rental heap in earliest-due order.
     void viewActiveRentals() {
         ArrayList<Rental> rentals = rentalService.getRentalsByDueDate();
         if (rentals.isEmpty()) {
@@ -1581,63 +1631,7 @@ public class Queue2Play {
         }
     }
 
-    void viewOverdueItems() {
-        ArrayList<Rental> rentals = rentalService.getRentalsByDueDate();
-        LocalDateTime now = LocalDateTime.now();
-        for (int i = rentals.size() - 1; i >= 0; i--) {
-            if (!now.isAfter(rentals.get(i).dueDate)) {
-                rentals.remove(i);
-            }
-        }
-
-        if (rentals.isEmpty()) {
-            ui.printHeader("ADMIN > ACTIVE RENTALS", "OVERDUE RENTALS");
-            ui.showEmptyState("There are no overdue rentals.");
-            waitForScreenNavigation("Active Rentals", true);
-            return;
-        }
-
-        int page = 0;
-        ArrayList<Integer> starts = ui.rentalPages(rentals, "overdue");
-        int totalPages = starts.size() - 1;
-        while (true) {
-            int start = starts.get(page);
-            int end = starts.get(page + 1);
-            ui.printHeader("OVERDUE RENTALS - Earliest Due Date First", TerminalUI.OVERDUE_TABLE_WIDTH);
-            ui.showListStatus("Earliest due date first · Page: " + (page + 1) + "/" + totalPages,
-                "Showing " + (start + 1) + "-" + end + " of " + rentals.size(), TerminalUI.OVERDUE_TABLE_WIDTH);
-            ui.showOverdueRentalHeader(rentals.size(), start, end);
-
-            for (int i = start; i < end; i++) {
-                Rental rental = rentals.get(i);
-                long daysOverdue = RentalManager.daysOverdue(rental.dueDate, now);
-                ui.showOverdueRentalRow(daysOverdue * LATE_FEE_PER_DAY * rental.quantity, rental, daysOverdue);
-            }
-            ui.info(ui.tableLine(TerminalUI.OVERDUE_TABLE_WIDTH));
-
-            Rental top = rentals.get(0);
-            ui.showEarliestDueRental(top);
-            ui.showPagination(page, totalPages);
-            ui.showNavigationOptions(new String[] {"[B] Active Rentals", "[M] Dashboard"});
-            ui.inputBar("ENTER CHOICE", TerminalUI.OVERDUE_TABLE_WIDTH);
-
-            String choice = ui.readText(ui.prompt(TerminalUI.OVERDUE_TABLE_WIDTH));
-            if (choice.equalsIgnoreCase("M")) {
-                requestDashboardReturn();
-                return;
-            } else if (choice.equalsIgnoreCase("N") && page < totalPages - 1) {
-                page++;
-            }
-            else if (choice.equalsIgnoreCase("P") && page > 0) {
-                page--;
-            }
-            else if ((choice.equalsIgnoreCase("B") || choice.equals("0"))) {
-                return;
-            }
-            else ui.error("Invalid choice.");
-        }
-    }
-
+    // Read the audit stack newest first without removing its entries.
     void viewAuditLog() {
         if (auditLog.isEmpty()) {
             ui.printHeader("ADMIN > AUDIT LOG", "ADMIN AUDIT LOG");
@@ -1697,6 +1691,7 @@ public class Queue2Play {
 
     // Manage inventory (admin)
 
+    // Route admin choices for browsing, adding, deleting and updating games.
     void manageInventory() {
         while (true) {
             ui.showInventoryMenu();
@@ -1731,6 +1726,7 @@ public class Queue2Play {
         }
     }
 
+    // Use linear search to detect a duplicate title on the same platform.
     private boolean gameAlreadyExists(String title, String platform) {
         for (Game game : games.values()) {
             if (game.title.equalsIgnoreCase(title) && game.platform.equals(platform)) {
@@ -1740,6 +1736,7 @@ public class Queue2Play {
         return false;
     }
 
+    // Reject duplicates, then add a game to the inventory map by ID.
     void addGame() {
         while (true) {
             String title = "";
@@ -2016,6 +2013,7 @@ public class Queue2Play {
         }
     }
 
+    // Confirm game deletion and remove its pending requests when allowed.
     void deleteGame() {
         while (true) {
             String platform = choosePlatform("ADMIN > MANAGE INVENTORY > DELETE GAME");
@@ -2072,6 +2070,7 @@ public class Queue2Play {
         }
     }
 
+    // Validate and confirm a stock adjustment before saving it.
     void updateGameStock() {
         while (true) {
             String platform = choosePlatform("ADMIN > MANAGE INVENTORY > UPDATE STOCK");

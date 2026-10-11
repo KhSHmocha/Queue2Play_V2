@@ -5,3 +5,4 @@ juan|Juan D. Cruz|juan@email.com|pbkdf2$210000$Ftn5LRnLNIEWOjptWVwAXA==$F0gxOmf7
 OnezPH|Onez P. H|Onez@gmail.com|pbkdf2$210000$VDHChtuTU/drUZCKaMcYag==$h4IJYBKypEc6kZZmMj3963E3mhZXeZiutO/b/Fqac4w=|CLIENT|REGULAR
 gerbs|Gerbie A. Hernandez|gerbie@gmail.com|pbkdf2$210000$0vlg8qj5Yxr4LV3UfY2RNA==$NpbRvbTRHQmqmgkv1N4VYBCJc4FqmLvaNhRig2smKFs=|CLIENT|REGULAR
 DLT|Drix Lang Toh|dlt@gmail.com|pbkdf2$210000$MoJ1kF3h0zY6vlBMVTyKzA==$vHyE5kPqWmwiN5N6hr9pGfc6Y4FkQhIAaVfCi0vRQC4=|CLIENT|VIP
+sadasd|gerger|hernan@gmail.com|pbkdf2$210000$qrMZbzcmQpkj1dECEaGDPQ==$ZKKlzLeqr+saIw4uFv15+8nA0dMtTFbek9QonfR8aig=|CLIENT|REGULAR

@@ -10,6 +10,7 @@ class RentalManager {
     private final ArrayList<Rental> allRentals;
     private final Map<String, Game> catalog;
 
+    // Use shared queue, heap, history and catalog data for rental operations.
     RentalManager(CheckoutQueue checkoutQueue, PriorityQueue<Rental> activeRentals,
         ArrayList<Rental> allRentals, Map<String, Game> catalog) {
         this.checkoutQueue = checkoutQueue;
@@ -18,14 +19,17 @@ class RentalManager {
         this.catalog = catalog;
     }
 
+    // Compare clients by username, ignoring case.
     static boolean sameUser(User a, User b) {
         return a != null && b != null && a.username.equalsIgnoreCase(b.username);
     }
 
+    // Compare games by their stable identifiers.
     static boolean sameGame(Game a, Game b) {
         return a != null && b != null && a.gameId.equals(b.gameId);
     }
 
+    // Traverse active rentals to count the copies currently out for one game.
     int rentedCopies(Game game) {
         int count = 0;
         for (Rental rental : activeRentals) {
@@ -36,6 +40,7 @@ class RentalManager {
         return count;
     }
 
+    // Calculate a stock adjustment while preserving the total-copy limit.
     int updatedStock(Game game, boolean adding, int quantity) {
         RentalDataStore.require(quantity >= 1, "Quantity must be positive");
         long result = game.availableCopies;
@@ -49,6 +54,7 @@ class RentalManager {
         return (int) result;
     }
 
+    // Calculate the base rental price with the client's VIP discount.
     double calculateRentalCost(User client, Game game) {
         RentalDataStore.require(client != null && game != null, "Client and game are required");
         GameCatalog.validate(game.title, game.platform, game.price, game.availableCopies);
@@ -58,17 +64,20 @@ class RentalManager {
         return game.price;
     }
 
+    // Scale the price for the chosen duration and round to cents.
     double calculateRentalCost(User client, Game game, int days) {
         RentalDataStore.require(days >= 1 && days <= Queue2Play.MAX_RENTAL_DAYS, "Invalid rental duration");
         double price = calculateRentalCost(client, game) * days / Queue2Play.RENTAL_DAYS;
         return Math.round(price * 100) / 100.0;
     }
 
+    // Multiply the duration price by quantity and round to cents.
     double calculateRentalCost(User client, Game game, int days, int quantity) {
         RentalDataStore.require(quantity >= 1 && quantity <= Queue2Play.MAX_SAVED_COPIES_PER_GAME, "Invalid quantity");
         return Math.round(calculateRentalCost(client, game, days) * quantity * 100) / 100.0;
     }
 
+    // Use linear search to check whether a client is renting a game.
     boolean hasActiveRental(User client, Game game) {
         for (Rental rental : activeRentals) {
             if (sameUser(rental.client, client) && sameGame(rental.game, game)) {
@@ -78,6 +87,7 @@ class RentalManager {
         return false;
     }
 
+    // Traverse active rentals to total a client's copies of one game.
     int activeCopies(User client, Game game) {
         int copies = 0;
         for (Rental rental : activeRentals) {
@@ -88,6 +98,7 @@ class RentalManager {
         return copies;
     }
 
+    // Use linear search to check whether any client is renting a game.
     boolean gameHasActiveRental(Game game) {
         for (Rental rental : activeRentals) {
             if (sameGame(rental.game, game)) {
@@ -97,6 +108,7 @@ class RentalManager {
         return false;
     }
 
+    // Poll a copied min-heap into due-date order without changing active rentals.
     ArrayList<Rental> getRentalsByDueDate() {
         ArrayList<Rental> sorted = new ArrayList<>();
         PriorityQueue<Rental> copy = new PriorityQueue<>(activeRentals);
@@ -106,6 +118,7 @@ class RentalManager {
         return sorted;
     }
 
+    // Check that a queued request can safely become an active rental.
     String validateCheckout(RentalRequest request) {
         if (request == null || checkoutQueue.findByNumber(request.queueNumber) != request) {
             return "This queue request no longer exists.";
@@ -130,6 +143,7 @@ class RentalManager {
         return null;
     }
 
+    // Deduct stock, add rental and history entries, then remove the queued request.
     Rental checkout(RentalRequest request, int rentalNumber) {
         boolean duplicateNumber = false;
         for (Rental existing : allRentals) {
@@ -158,11 +172,13 @@ class RentalManager {
         return rental;
     }
 
+    // Calculate the per-copy fee for the recorded number of late days.
     double calculateLateFee(Rental rental, int daysLate) {
         RentalDataStore.require(daysLate >= 0, "Days late cannot be negative");
         return daysLate * Queue2Play.LATE_FEE_PER_DAY * rental.quantity;
     }
 
+    // Count each started day after the due time as one late day.
     static int daysOverdue(LocalDateTime due, LocalDateTime now) {
         if (!now.isAfter(due)) {
             return 0;
@@ -176,6 +192,7 @@ class RentalManager {
         return Math.toIntExact(days);
     }
 
+    // Remove the active heap entry, record late fees and restore stock.
     void completeReturn(Rental rental, LocalDateTime returnedAt) {
         RentalDataStore.require(rental != null && returnedAt != null && !returnedAt.isBefore(rental.checkoutDate), "Invalid return date");
         if (!rental.status.equals("ACTIVE") || !activeRentals.contains(rental)) {
@@ -191,6 +208,7 @@ class RentalManager {
         rental.game.availableCopies = restored;
     }
 
+    // Check each cart line against catalog, stock, rental and queue limits.
     String validateCart(User client, LinkedHashMap<Game, Integer> cart) {
         if (client == null || client.isAdmin()) {
             return "A client account is required.";

@@ -1,4 +1,5 @@
 public class Main {
+    // Start Queue2Play and report input or storage failures.
     public static void main(String[] args) {
         try {
             Queue2Play system = new Queue2Play();

@@ -514,8 +514,8 @@ public class BehaviorRegressionTest {
         check(ui.nextChoice == 2 && ui.clears == 1 && ui.errors.size() == 1,
                 "Empty active rentals stays visible through invalid input until Back");
         ui = script(system, new String[] {"bad", "m"});
-        system.viewOverdueItems();
-        check(ui.nextChoice == 2 && system.isDashboardReturnRequested(), "Empty overdue screen supports Dashboard");
+        system.viewActiveRentals();
+        check(ui.nextChoice == 2 && system.isDashboardReturnRequested(), "Empty active rentals screen supports Dashboard");
         system.clearDashboardReturnRequest();
         ui = script(system, new String[] {"bad", "B"});
         system.viewAuditLog();
@@ -855,7 +855,7 @@ public class BehaviorRegressionTest {
             checkVerticalMenu(output.toString("UTF-8"), new String[] {"[1] Browse All Games", "[2] PS5 Games", "[3] Xbox Games", "[4] Nintendo Games"});
             output.reset();
             ui.showActiveRentalsMenu();
-            checkVerticalMenu(output.toString("UTF-8"), new String[] {"[1] All Active Rentals", "[2] Overdue Rentals"});
+            checkVerticalMenu(output.toString("UTF-8"), new String[] {"[1] All Active Rentals"});
             output.reset();
             ui.showLoginUsernameScreen();
             String plain = output.toString("UTF-8").replaceAll("\u001B\\[[0-9;]*[mHJ]", "");
@@ -1552,7 +1552,8 @@ public class BehaviorRegressionTest {
         loaded.dataStore.loadGames();
         loaded.dataStore.loadRentals();
         loaded.dataStore.loadQueue();
-        check(loaded.activeRentals.size() == 4 && loaded.allRentals.size() == 4, "Saved checkout reloads rentals");
+        check(loaded.activeRentals.size() == 4 && loaded.allRentals.size() == 5,
+            "Saved checkout reloads four active rentals and one cancelled history record");
         check(loaded.games.get(game.gameId).availableCopies == 19, "Saved checkout reloads stock");
         check(loaded.checkoutQueue.getRequests().size() == 1, "Saved cancellation reloads queue");
         script(loaded, new String[] {"", "Y", "0"});
@@ -2101,8 +2102,9 @@ public class BehaviorRegressionTest {
         system.checkoutManagement();
         check(ui.lastApproved == 1 && ui.lastCancelled == 1 && ui.slipNumbers.size() == 2,
             "Approval and cancellation still commit after invalid-answer retries");
-        check(system.allRentals.size() == 1 && system.checkoutQueue.findByNumber(6) == null,
-            "Confirmed actions still create rental and remove cancelled request");
+        check(system.allRentals.size() == 2 && system.activeRentals.size() == 1
+                && system.checkoutQueue.findByNumber(6) == null,
+            "Confirmed actions create one active rental and one cancelled history record");
         system = sessionSystem("confirm-aborts");
         ui = script(system, new String[] {"", "bad", "n", "C", "6", "bad", "NO", "0"});
         system.checkoutManagement();
@@ -2778,6 +2780,113 @@ public class BehaviorRegressionTest {
         check(loaded.allRentals.size() == 12 && loaded.checkoutQueue.isEmpty(), "Paged batch saves and reloads all approvals");
     }
 
+    static void rentalDisplayAndCancellationTests() throws Exception {
+        System.setProperty("q2p.width", "120");
+        System.setProperty("q2p.height", "50");
+        Queue2Play active = returnSystem("active-nine-page", 11);
+        TerminalUI ui = new TerminalUI();
+        ArrayList<Rental> ordered = active.rentalService.getRentalsByDueDate();
+        ArrayList<Integer> starts = ui.rentalPages(ordered, "active");
+        check(starts.size() == 3 && starts.get(1) == 9 && starts.get(2) == 11,
+            "Active rentals show nine rows then the remaining two");
+        PrintStream previous = System.out;
+        ByteArrayOutputStream drawing = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(drawing, true, "UTF-8"));
+        try {
+            ui.showActiveRentalsMenu();
+            check(!drawing.toString("UTF-8").contains("Overdue Rentals"), "Overdue submenu is removed");
+            drawing.reset();
+            ui.showVipBenefits();
+            check(drawing.toString("UTF-8").contains("Free lifetime membership"), "VIP price states free lifetime membership");
+            int[] widths = {120, 81};
+            int[] heights = {50, 30};
+            for (int width : widths) {
+                for (int height : heights) {
+                    System.setProperty("q2p.width", String.valueOf(width));
+                    System.setProperty("q2p.height", String.valueOf(height));
+                    ui = new TerminalUI();
+                    starts = ui.rentalPages(ordered, "active");
+                    for (int page = 0; page < starts.size() - 1; page++) {
+                        drawing.reset();
+                        int start = starts.get(page);
+                        int end = starts.get(page + 1);
+                        ui.printHeader("ACTIVE RENTALS - Earliest Due Date First", TerminalUI.ACTIVE_TABLE_WIDTH);
+                        ui.showListStatus("Earliest due date first · Page: " + (page + 1) + "/" + (starts.size() - 1),
+                            "Showing " + (start + 1) + "-" + end + " of " + ordered.size(), TerminalUI.ACTIVE_TABLE_WIDTH);
+                        ui.showActiveRentalHeader(ordered.size(), start, end);
+                        for (int i = start; i < end; i++) {
+                            ui.showActiveRentalRow(ordered.get(i));
+                        }
+                        ui.info(ui.tableLine(TerminalUI.ACTIVE_TABLE_WIDTH));
+                        ui.showPagination(page, starts.size() - 1);
+                        ui.showNavigationOptions(new String[] {"[B] Active Rentals", "[M] Dashboard"});
+                        ui.inputBar("ENTER CHOICE", TerminalUI.ACTIVE_TABLE_WIDTH);
+                        ui.info(ui.prompt(TerminalUI.ACTIVE_TABLE_WIDTH));
+                        String plain = positionedDrawing(drawing, TerminalUI.ACTIVE_TABLE_WIDTH);
+                        check(end - start <= 9 && plain.split("\\R").length <= height,
+                            "Active page, navigation and prompt fit " + width + "x" + height);
+                    }
+                }
+            }
+        } finally {
+            System.setOut(previous);
+        }
+        System.setProperty("q2p.width", "120");
+        System.setProperty("q2p.height", "26");
+        starts = new TerminalUI().rentalPages(ordered, "active");
+        check(starts.get(1) < 9 && starts.get(starts.size() - 1) == 11,
+            "Short terminals show fewer rentals without losing records");
+        System.setProperty("q2p.height", "50");
+        Queue2Play system = sessionSystem("cancelled-history");
+        RentalRequest request = system.checkoutQueue.findByNumber(6);
+        User customer = request.client;
+        int stock = request.game.availableCopies;
+        int streak = system.checkoutQueue.vipStreak;
+        system.dataStore.saveData();
+        script(system, new String[] {"6", "NO"});
+        system.cancelSessionRequest(new Queue2Play.CheckoutSession("admin"));
+        check(customer.rentalHistory.isEmpty() && system.checkoutQueue.findByNumber(6) == request,
+            "Declining cancellation leaves queue and customer history unchanged");
+        script(system, new String[] {"6", "YES"});
+        system.cancelSessionRequest(new Queue2Play.CheckoutSession("admin"));
+        Rental cancelled = customer.rentalHistory.peek();
+        check(cancelled.status.equals("CANCELLED") && cancelled.quantity == request.quantity
+            && cancelled.game == request.game && cancelled.amount == 0,
+            "Admin cancellation creates a zero-charge customer history record");
+        check(system.activeRentals.isEmpty() && request.game.availableCopies == stock
+            && system.checkoutQueue.vipStreak == streak && system.checkoutQueue.findByNumber(6) == null,
+            "Cancellation changes neither active rentals nor stock nor VIP streak");
+        check(ui.historyDueDate(cancelled).equals("-"), "Cancelled requests have no displayed rental due date");
+        Queue2Play loaded = freshSystem("cancelled-history");
+        loaded.accountService.loadAccounts();
+        loaded.dataStore.loadGames();
+        loaded.dataStore.loadRentals();
+        loaded.dataStore.loadQueue();
+        Rental saved = loaded.accountService.findUser(customer.username).rentalHistory.peek();
+        check(saved.status.equals("CANCELLED") && saved.quantity == request.quantity
+            && saved.amount == 0 && loaded.activeRentals.isEmpty(),
+            "Cancelled customer history survives restart");
+        script(loaded, new String[] {"B"});
+        loaded.viewHistory(saved.client);
+        // Failed cancellation saves must restore both history and the queued request.
+        system = sessionSystem("cancelled-history-rollback");
+        request = system.checkoutQueue.findByNumber(6);
+        system.dataStore.saveData();
+        int number = system.nextRentalNumber;
+        System.setProperty("q2p.test.failAfterReplace", "2");
+        try {
+            script(system, new String[] {"6", "Y"});
+            system.cancelSessionRequest(new Queue2Play.CheckoutSession("admin"));
+        } finally {
+            System.clearProperty("q2p.test.failAfterReplace");
+        }
+        check(request.client.rentalHistory.isEmpty() && system.allRentals.isEmpty()
+            && system.checkoutQueue.findByNumber(6) != null && system.nextRentalNumber == number,
+            "Failed save restores cancelled history, queue and record counter together");
+        System.clearProperty("q2p.width");
+        System.clearProperty("q2p.height");
+    }
+
     public static void main(String[] args) throws Exception {
         new TerminalUI(); // Initialize the UTF-8 output stream before capturing TUI output.
         PrintStream originalOutput = System.out;
@@ -2851,6 +2960,7 @@ public class BehaviorRegressionTest {
         queueTests();
         predictedQueueTests();
         returnTests();
+        rentalDisplayAndCancellationTests();
         checkoutSessionTests();
         transactionPaginationTests();
         separatedTransactionTests();
