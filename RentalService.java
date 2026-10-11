@@ -65,7 +65,7 @@ class RentalService {
     }
 
     double calculateRentalCost(User client, Game game, int days, int quantity) {
-        RentalDataStore.require(quantity >= 1 && quantity <= GameRentalSystem.MAX_COPIES_PER_GAME, "Invalid quantity");
+        RentalDataStore.require(quantity >= 1 && quantity <= GameRentalSystem.MAX_SAVED_COPIES_PER_GAME, "Invalid quantity");
         return Math.round(calculateRentalCost(client, game, days) * quantity * 100) / 100.0;
     }
 
@@ -76,6 +76,16 @@ class RentalService {
             }
         }
         return false;
+    }
+
+    int activeCopies(User client, Game game) {
+        int copies = 0;
+        for (Rental rental : activeRentals) {
+            if (sameUser(rental.client, client) && sameGame(rental.game, game)) {
+                copies += rental.quantity;
+            }
+        }
+        return copies;
     }
 
     boolean gameHasActiveRental(Game game) {
@@ -106,8 +116,9 @@ class RentalService {
         if (catalog.get(request.game.gameId) != request.game) {
             return "This game is no longer in the catalog.";
         }
-        if (hasActiveRental(request.client, request.game)) {
-            return "This client already has an active rental for this game.";
+        if (activeCopies(request.client, request.game) > GameRentalSystem.MAX_SAVED_COPIES_PER_GAME - request.quantity) {
+            return "This checkout would exceed " + GameRentalSystem.MAX_SAVED_COPIES_PER_GAME
+                + " active copies of this game for the client.";
         }
         if (!Double.isFinite(request.game.price) || request.game.price < GameRentalSystem.MIN_RENTAL_PRICE
             || request.game.price > GameRentalSystem.MAX_RENTAL_PRICE) {
@@ -195,11 +206,15 @@ class RentalService {
             if (quantity < 1 || quantity > GameRentalSystem.MAX_COPIES_PER_GAME) {
                 return "Invalid quantity for " + game.title + ". Maximum is " + GameRentalSystem.MAX_COPIES_PER_GAME + ".";
             }
-            if (checkoutQueue.hasRequest(client, game)) {
-                return "You already have a pending queue request for " + game.title + ".";
+            if (checkoutQueue.queuedCopies(client, game) > GameRentalSystem.MAX_COPIES_PER_GAME - quantity) {
+                return "Maximum queued quantity is " + GameRentalSystem.MAX_COPIES_PER_GAME
+                    + " copies for " + game.title + ", including this cart.";
             }
             if (hasActiveRental(client, game)) {
                 return "You are already renting " + game.title + ".";
+            }
+            if (quantity > game.availableCopies) {
+                return "Not enough stock for " + game.title + ". Available: " + game.availableCopies + ".";
             }
         }
         return null;

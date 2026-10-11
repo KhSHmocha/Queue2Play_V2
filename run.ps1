@@ -10,5 +10,7 @@ New-Item -ItemType Directory -Path $buildFolder -Force | Out-Null
 $sources = Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.java' | Select-Object -ExpandProperty FullName
 & javac -encoding UTF-8 -d $buildFolder $sources
 if ($LASTEXITCODE -ne 0) { throw 'Java compilation failed.' }
-& java "-Dfile.encoding=UTF-8" "-Dstdout.encoding=UTF-8" ("-Dq2p.dataDir=" + (Join-Path $PSScriptRoot 'data')) -cp $buildFolder Main
+$terminalColumns = [Console]::WindowWidth
+if ($terminalColumns -lt 40) { $terminalColumns = 120 }
+& java "-Dfile.encoding=UTF-8" "-Dstdout.encoding=UTF-8" "-Dq2p.width=$terminalColumns" ("-Dq2p.dataDir=" + (Join-Path $PSScriptRoot 'data')) -cp $buildFolder Main
 if ($LASTEXITCODE -ne 0) { throw 'QUEUE2PLAY stopped because of a data or startup error. Read the message above.' }

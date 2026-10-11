@@ -50,7 +50,7 @@ public class CheckoutQueue {
 
     static boolean validRequest(RentalRequest request) {
         return request != null && request.client != null && request.game != null && !request.client.isAdmin()
-            && request.queueNumber > 0 && request.quantity >= 1 && request.quantity <= GameRentalSystem.MAX_COPIES_PER_GAME
+            && request.queueNumber > 0 && request.quantity >= 1 && request.quantity <= GameRentalSystem.MAX_SAVED_COPIES_PER_GAME
             && request.rentalDays >= 1 && request.rentalDays <= GameRentalSystem.MAX_RENTAL_DAYS;
     }
 
@@ -160,6 +160,17 @@ public class CheckoutQueue {
             }
         }
         return false;
+    }
+
+    int queuedCopies(User client, Game game) {
+        int copies = 0;
+        for (Node current = front; current != null; current = current.next) {
+            RentalRequest request = current.request;
+            if (RentalService.sameUser(request.client, client) && RentalService.sameGame(request.game, game)) {
+                copies += request.quantity;
+            }
+        }
+        return copies;
     }
 
     RentalRequest findByNumber(int queueNumber) {

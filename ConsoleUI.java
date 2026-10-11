@@ -38,6 +38,9 @@ public class ConsoleUI {
     static final int CHECKOUT_QUEUE_TABLE_WIDTH = 81;
     private final Scanner input = new Scanner(System.in);
     private final int terminalWidth = Math.max(40, Integer.getInteger("q2p.width", configuredWidth()));
+    private final boolean cursorEnabled = Boolean.parseBoolean(
+        System.getProperty("q2p.ansi", String.valueOf(System.console() != null)));
+    private boolean outputAtLineStart = true;
 
     private static int configuredWidth() {
         try {
@@ -194,15 +197,33 @@ public class ConsoleUI {
     }
 
     // Every direct write goes through emit so a waiting border is drawn first.
+    private void writeTerminal(String text, boolean newLine) {
+        if (text.startsWith("\r")) {
+            System.out.print("\r");
+            text = text.substring(1);
+            outputAtLineStart = true;
+        }
+        if (outputAtLineStart && !text.isEmpty()) {
+            int margin = Math.max(0, (terminalWidth - currentWidth) / 2);
+            System.out.print(" ".repeat(margin));
+            outputAtLineStart = false;
+        }
+        System.out.print(text);
+        if (newLine) {
+            System.out.println();
+            outputAtLineStart = true;
+        }
+    }
+
     private void emit(String text) {
         flushBorder(false);
-        System.out.print(text);
+        writeTerminal(text, false);
         lastWasRow = false;
     }
 
     private void emitLine(String text) {
         flushBorder(false);
-        System.out.println(text);
+        writeTerminal(text, true);
         lastWasRow = false;
     }
 
@@ -248,7 +269,7 @@ public class ConsoleUI {
         }
         String text = renderBorder(pendingBorder, pendingFill, pendingLight, edge, pendingTone);
         pendingBorder = null;
-        System.out.println(text);
+        writeTerminal(text, true);
     }
 
     private String renderBorder(String line, char fill, boolean light, int edge, String tone) {
@@ -295,7 +316,7 @@ public class ConsoleUI {
     // One finished row (already colored) between two walls.
     private void printStyledRow(String styled) {
         flushBorder(true);
-        System.out.println(styled);
+        writeTerminal(styled, true);
         lastWasRow = true;
     }
 
@@ -355,6 +376,7 @@ public class ConsoleUI {
     String readText(String prompt) {
         showPendingMessage(currentWidth);
         emit(prompt);
+        outputAtLineStart = true; // ENTER finishes the line in the terminal.
         if (System.console() != null && System.getProperty("os.name").startsWith("Windows")) {
             System.out.flush();
             return readWindowsInput(false).trim();
@@ -379,11 +401,14 @@ public class ConsoleUI {
         emit("");   // draw the input panel's bottom border before the hidden prompt
         if (System.getProperty("os.name").startsWith("Windows")) {
             emit(prompt);
+            outputAtLineStart = true;
             System.out.flush();
             return readWindowsInput(true);
         }
         if (System.console() != null) {
-            char[] password = System.console().readPassword("%s", prompt);
+            emit(prompt);
+            outputAtLineStart = true;
+            char[] password = System.console().readPassword();
             if (password == null) {
                 throw new InputEndedException();
             }
@@ -483,10 +508,10 @@ public class ConsoleUI {
 
     private String inputGuide(String label) {
         switch (label) {
-            case "FULL NAME": return "Enter your full name. Letters, spaces, hyphens and apostrophes are accepted.";
-            case "USERNAME": return "Use 3-32 letters, numbers, dots, underscores or hyphens.";
+            case "FULL NAME": return "Use 5-60 characters with at least two letters.\nOnly letters, spaces and dots are allowed.";
+            case "USERNAME": return "Use 3-20 letters, digits, dots, underscores or hyphens.\nInclude at least one letter.";
             case "USERNAME OR EMAIL": return "Enter your registered username or email.";
-            case "EMAIL": return "Enter your email address.\nExample: juancruz@gmail.com";
+            case "EMAIL": return "Enter a valid email of at most 100 characters.\nExample: juancruz@gmail.com";
             case "PASSWORD": return "Enter your password, then press ENTER.";
             case "CONFIRM PASSWORD": return "Type the same password again.";
             case "SEARCH GAME": return "Enter a game ID, title, or platform.";
@@ -516,14 +541,19 @@ public class ConsoleUI {
         return "  " + color(">", PINK) + " ";
     }
 
-    // Fake clear-screen: pushes the previous screen out of the visible terminal area.
-    // Clearing needs no ANSI cursor movement.
+    // Start each new screen at the top; redirected output needs no cursor controls.
     void clearScreen() {
+        pendingBorder = null;
+        lastWasRow = false;
+        outputAtLineStart = true;
         currentWidth = STANDARD_WIDTH;
         borderTone = PINK;
         textTone = "";
         lightBox = false;
-        emit("\n".repeat(60));
+        if (cursorEnabled) {
+            System.out.print("\u001B[2J\u001B[H");
+            System.out.flush();
+        }
     }
 
     void pause(int milliseconds) {
@@ -556,27 +586,14 @@ public class ConsoleUI {
         printLine();
     }
 
-    void waitForEnter() {
-        waitForEnter(currentWidth);
+    void finishScreen() {
+        finishScreen(currentWidth);
     }
 
-    void waitForEnter(int width) {
-        showPendingMessage(width);
-        printLine();
-        emit(color(center("Press ENTER to continue...", width), PINK));
-        if (System.console() != null) {
-            if (System.console().readLine() == null) {
-                throw new InputEndedException();
-            }
-        } else {
-            if (!input.hasNextLine()) {
-                throw new InputEndedException();
-            }
-            input.nextLine();
-        }
-        // If the user already stopped to read the message, do not repeat it on the next screen.
-        pendingMessage = null;
-        pendingMessageType = null;
+    void finishScreen(int width) {
+        currentWidth = width;
+        // Retry messages stay pending until the next input panel is drawn.
+        flushBorder(false);
     }
 
     void success(String message) {
@@ -867,16 +884,21 @@ public class ConsoleUI {
     }
 
     void showSelectQuantityScreen(Game game, int inCart, int maxPerGame, int maximumToAdd) {
+        showSelectQuantityScreen(game, inCart, 0, maxPerGame, maximumToAdd);
+    }
+
+    void showSelectQuantityScreen(Game game, int inCart, int queued, int maxPerGame, int maximumToAdd) {
         printHeader("CLIENT > RENT GAMES", "SELECT QUANTITY");
         printCenteredDetails(new String[] {
             "Game: " + game.title,
             "Platform: " + platformColor(game.platform),
             "Already in Cart: " + inCart,
+            "Already Queued: " + queued,
             "Available Stock: " + game.availableCopies,
             "Maximum Per Game: " + maxPerGame,
             "You may request up to: " + maximumToAdd
         });
-        printBoxCentered("Requests wait when stock is not enough.", STANDARD_WIDTH);
+        printBoxCentered("Cart quantity cannot exceed available stock.", STANDARD_WIDTH);
         printBoxCentered(navigationRow(STANDARD_WIDTH, new String[] {"[0] Back", "[C] Cancel Transaction", "[M] Dashboard"}), STANDARD_WIDTH);
         printLine(border(STANDARD_WIDTH, '='));
         inputBar("ENTER QUANTITY");
@@ -999,18 +1021,20 @@ public class ConsoleUI {
 
     // Closing screen shown when the program exits.
     void showGoodbye() {
-        printLine();
-        if (unicode && terminalWidth >= THANK_YOU_ART[0].length()) {
+        clearScreen();
+        int artWidth = 0;
+        for (String row : THANK_YOU_ART) {
+            artWidth = Math.max(artWidth, row.length());
+        }
+        currentWidth = Math.min(terminalWidth, STANDARD_WIDTH);
+        if (unicode && terminalWidth >= artWidth) {
+            currentWidth = artWidth;
             for (String row : THANK_YOU_ART) {
-                emitLine(color(row, PINK));
+                emitLine(color(row + " ".repeat(artWidth - row.length()), PINK));
             }
             printLine();
         }
-        int width = STANDARD_WIDTH;
-        if (unicode) {
-            width = Math.min(terminalWidth, 76);
-        }
-        emitLine(color(center("Thank you for using QUEUE2PLAY. Goodbye!", width), PINK));
+        emitLine(color(center("Thank you for using QUEUE2PLAY. Goodbye!", currentWidth), PINK));
     }
 
     void showLoginUsernameScreen() {
@@ -1019,81 +1043,95 @@ public class ConsoleUI {
         printLine("|                          LOGIN                           |");
         printLine("|                                                          |");
         printLine("+==========================================================+");
-        showBoxNavigationOptions(new String[] {"[0] Back"});
+        showBoxNavigationOptions(new String[] {"[0] Main Menu"});
         printLine("+==========================================================+");
         inputBar("USERNAME OR EMAIL");
     }
 
-    void showLoginPasswordScreen(String username) {
+    void showLoginPasswordScreen(String login) {
         printLine("+==========================================================+");
         printLine("|                                                          |");
         printLine("|                          LOGIN                           |");
         printLine("|                                                          |");
         printLine("+==========================================================+");
         printLine("|                                                          |");
-        printBoxCentered("Username: " + fit(username, 46), STANDARD_WIDTH);
+        printBoxCentered("Username/Email: " + fit(login, 40), STANDARD_WIDTH);
         printLine("|                                                          |");
-        showBoxNavigationOptions(new String[] {"[0] Back"});
+        showBoxNavigationOptions(new String[] {"[B] Back to Username/Email", "[0] Main Menu"});
         printLine("+==========================================================+");
         inputBar("PASSWORD");
     }
 
-    void showRegisterFullNameScreen() {
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|                     CREATE ACCOUNT                       |");
-        printLine("|                                                          |");
-        printLine("+==========================================================+");
-        showBoxNavigationOptions(new String[] {"[0] Back to Main Menu"});
-        printLine("+==========================================================+");
-        inputBar("FULL NAME");
+    void showRegistrationStep(int step, boolean editing, String fullName, String username, String email) {
+        String[] labels = {"FULL NAME", "USERNAME", "EMAIL", "PASSWORD", "CONFIRM PASSWORD"};
+        String label = labels[step - 1];
+        printHeader("CREATE ACCOUNT", label);
+        if (!fullName.isEmpty()) {
+            printCenteredDetails(new String[] {"Name: " + fullName});
+        }
+        if (!username.isEmpty()) {
+            printCenteredDetails(new String[] {"Username: " + username});
+        }
+        if (!email.isEmpty()) {
+            printCenteredDetails(new String[] {"Email: " + email});
+        }
+        if (step == 1 && !editing) {
+            showNavigationOptions(new String[] {"[0] Main Menu"});
+        } else if (editing && step != 5) {
+            showNavigationOptions(new String[] {"[B] Edit Information", "[C] Cancel Registration"});
+        } else {
+            showNavigationOptions(new String[] {"[B] Previous Step", "[C] Cancel Registration"});
+        }
+        if (step == 4) {
+            inputBar(label, STANDARD_WIDTH, "Use 8-20 characters. Letters, digits and symbols are allowed.\nNo whitespace, control characters or |.");
+        } else {
+            inputBar(label);
+        }
     }
 
-    void showRegisterUsernameScreen(String fullName) {
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|                     CREATE ACCOUNT                       |");
-        printLine("|                                                          |");
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printFormatted(String.format("| Name: %-50s |%n", summaryText(fullName, 50)));
-        printLine("|                                                          |");
-        showBoxNavigationOptions(new String[] {"[0] Back", "[C] Cancel Registration"});
-        printLine("+==========================================================+");
-        inputBar("USERNAME");
+    void showRegistrationEditMenu(String fullName, String username, String email) {
+        printHeader("CREATE ACCOUNT", "EDIT INFORMATION");
+        printCenteredDetails(new String[] {"Name: " + fullName, "Username: " + username, "Email: " + email});
+        showFeatureOptions(new String[] {"[1] Full Name", "[2] Username", "[3] Email", "[4] Password"});
+        showNavigationOptions(new String[] {"[B] Registration Summary"});
+        inputBar("ENTER CHOICE");
     }
 
-    void showRegisterEmailScreen(String fullName, String username) {
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|                     CREATE ACCOUNT                       |");
-        printLine("|                                                          |");
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printFormatted(String.format("| Name: %-50s |%n", summaryText(fullName, 50)));
-        printFormatted(String.format("| Username: %-46s |%n", summaryText(username, 46)));
-        printLine("|                                                          |");
-        showBoxNavigationOptions(new String[] {"[0] Back", "[C] Cancel Registration"});
-        printLine("+==========================================================+");
-        inputBar("EMAIL");
+    boolean confirmRegistrationCancellation() {
+        while (true) {
+            printHeader("CREATE ACCOUNT", "CANCEL REGISTRATION");
+            printBoxCentered("Discard all entered registration information?", STANDARD_WIDTH);
+            inputBar("ENTER CHOICE", STANDARD_WIDTH, "[Y] Discard Registration   [N] Keep Registering");
+            String answer = readText(prompt()).trim();
+            if (answer.equalsIgnoreCase("Y") || answer.equalsIgnoreCase("YES")) {
+                return true;
+            }
+            if (answer.equalsIgnoreCase("N") || answer.equalsIgnoreCase("NO")) {
+                return false;
+            }
+            error("Use Y to discard or N to keep registering.");
+        }
     }
 
-    void showRegisterPasswordScreen(String fullName, String username, String email) {
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printLine("|                     CREATE ACCOUNT                       |");
-        printLine("|                                                          |");
-        printLine("+==========================================================+");
-        printLine("|                                                          |");
-        printFormatted(String.format("| Name: %-50s |%n", summaryText(fullName, 50)));
-        printFormatted(String.format("| Username: %-46s |%n", summaryText(username, 46)));
-        printFormatted(String.format("| Email: %-49s |%n", summaryText(email, 49)));
-        printLine("|                                                          |");
-        showBoxNavigationOptions(new String[] {"[0] Back", "[C] Cancel Registration"});
-        printLine("+==========================================================+");
-        inputBar("PASSWORD", STANDARD_WIDTH, "Choose a password with at least 8 characters.\nDo not use the | symbol.");
+    void showLoginCooldown() {
+        showPendingMessage(STANDARD_WIDTH);
+        printMessageBox("WARNING: Three failed attempts. Wait 30 seconds before trying again.", STANDARD_WIDTH);
+        flushBorder(false);
+        System.out.flush();
+        for (int seconds = 0; seconds < 30; seconds++) {
+            waitLoginSecond();
+        }
     }
 
+    // Unlike cosmetic animation pauses, this wait must also apply in fast mode.
+    void waitLoginSecond() {
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new InputEndedException();
+        }
+    }
     void showPlatformMenu(String heading) {
         clearScreen();
         printLine("+==========================================================+");
@@ -1599,6 +1637,7 @@ public class ConsoleUI {
     void showConfirmQuestion(String text) {
         showPendingMessage(CHECKOUT_QUEUE_TABLE_WIDTH);
         flushBorder(false);
+        currentWidth = CHECKOUT_QUEUE_TABLE_WIDTH;
         lastWasRow = false;
         String separator = "─".repeat(CHECKOUT_QUEUE_TABLE_WIDTH);
         emitLine(color(separator, PINK));
@@ -1950,11 +1989,7 @@ public class ConsoleUI {
     }
 
     void showFullNameInstructions() {
-        error("Enter a full name of 2-100 characters using letters, spaces, periods, hyphens or apostrophes.");
-    }
-
-    void showConfirmPasswordPrompt() {
-        showNavigationOptions(new String[] {"[0] Back", "[C] Cancel Registration"});
+        error("Use 5-60 characters with at least two letters. Only letters, spaces and dots are allowed.");
     }
 
     void showRegistrationConfirmation(String fullName, String username, String email) {
@@ -1969,8 +2004,8 @@ public class ConsoleUI {
             "Email      : " + email,
             "Membership : REGULAR"
         });
-        showFeatureOptions(new String[] {"[1] Create Account", "[2] Edit Information"});
-        showNavigationOptions(new String[] {"[0] Back", "[C] Cancel Registration"});
+        showFeatureOptions(new String[] {"[1] Create Account", "[E] Edit Information"});
+        showNavigationOptions(new String[] {"[C] Cancel Registration"});
     }
 
     void showAccountCreated() {

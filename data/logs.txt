@@ -58,3 +58,22 @@
 2026-10-11 09:44:12|ADMIN|Cancelled queue request #008: juan
 2026-10-11 09:50:11|ADMIN|Processed return: alex - Spider-Man 2 x2; days late 0; fee $0.00
 2026-10-11 09:53:56|EVENT|Login: admin (ADMIN)
+2026-10-11 11:26:47|EVENT|Login: admin (ADMIN)
+2026-10-11 11:29:06|ADMIN|Added stock: Halo Infinite (Xbox) 1 -> 5
+2026-10-11 11:29:22|ADMIN|Processed checkout: alex - Halo Infinite x5
+2026-10-11 11:45:59|EVENT|Login: juan (CLIENT)
+2026-10-11 11:47:22|EVENT|Queue request #015: juan - Spider-Man 2 x1 (1 day(s))
+2026-10-11 11:47:46|EVENT|Queue request #016: juan - Spider-Man 2 x2 (3 day(s))
+2026-10-11 11:48:04|EVENT|Queue request #017: juan - Spider-Man 2 x2 (7 day(s))
+2026-10-11 12:17:41|EVENT|Failed login attempt for account: admin123
+2026-10-11 12:24:55|EVENT|Incorrect password attempt for: juan
+2026-10-11 12:24:59|EVENT|Incorrect password attempt for: juan
+2026-10-11 12:25:13|EVENT|Incorrect password attempt for: juan
+2026-10-11 12:25:19|EVENT|Login: juan (CLIENT)
+2026-10-11 12:58:55|EVENT|Login: admin (ADMIN)
+2026-10-11 13:03:20|EVENT|Incorrect password attempt for: juan
+2026-10-11 13:34:55|EVENT|Registered account: gerbs
+2026-10-11 13:35:01|EVENT|Login: gerbs (CLIENT)
+2026-10-11 13:35:33|EVENT|Login: gerbs (CLIENT)
+2026-10-11 13:36:42|EVENT|Login: admin (ADMIN)
+2026-10-11 13:36:56|ADMIN|Processed return: alex - Minecraft x1; days late 0; fee $0.00

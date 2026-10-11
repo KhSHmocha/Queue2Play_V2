@@ -11,7 +11,9 @@ public class GameRentalSystem {
     // ---------- Settings ----------
     static final int RENTAL_DAYS = 3;
     static final int MAX_RENTAL_DAYS = 30;
-    static final int MAX_COPIES_PER_GAME = 5;
+    static final int MAX_COPIES_PER_GAME = 3;
+    // Existing requests and rental history may contain quantities from the old limit.
+    static final int MAX_SAVED_COPIES_PER_GAME = 5;
     static final int MAX_GAME_STOCK = 20;
     static final double MIN_RENTAL_PRICE = 1.00;
     static final double MAX_RENTAL_PRICE = 10.00;
@@ -234,7 +236,7 @@ public class GameRentalSystem {
                             ui.error(error);
                             continue;
                         }
-                        selectedQuantity[0] = askQuantity(game, cart.getOrDefault(game, 0));
+                        selectedQuantity[0] = askQuantity(game, cart.getOrDefault(game, 0), checkoutQueue.queuedCopies(client, game));
                         if (selectedQuantity[0] == 0) {
                             continue;
                         }
@@ -396,26 +398,41 @@ public class GameRentalSystem {
 
     private String validateRentalSelection(User client, LinkedHashMap<Game, Integer> cart, Game game) {
         int inCart = cart.getOrDefault(game, 0);
-        if (checkoutQueue.hasRequest(client, game)) {
-            return "You already have a pending request for this game.";
-        }
+        int queued = checkoutQueue.queuedCopies(client, game);
         if (rentalService.hasActiveRental(client, game)) {
             return "You are already renting this game.";
         }
-        if (inCart >= MAX_COPIES_PER_GAME) {
+        if (queued + inCart >= MAX_COPIES_PER_GAME) {
             return "You already have the maximum of "
-            + MAX_COPIES_PER_GAME + " copies of this game in your cart.";
+            + MAX_COPIES_PER_GAME + " copies of this game queued or in your cart.";
+        }
+        if (game.availableCopies <= 0) {
+            return "This game is out of stock.";
+        }
+        if (inCart >= game.availableCopies) {
+            return "Your cart already contains all available copies of this game.";
         }
         return null;
     }
 
-    // Requests can wait for stock, but the per-game quantity limit still applies.
+    // The combined cart quantity must fit both stock and the per-game limit.
     // Returns 0 if the client decides not to add this game after all.
     int askQuantity(Game game, int inCart) {
-        int maximumToAdd = MAX_COPIES_PER_GAME - inCart;
+        return askQuantity(game, inCart, 0);
+    }
+
+    int askQuantity(Game game, int inCart, int queued) {
+        int maximumToAdd = MAX_COPIES_PER_GAME - queued - inCart;
+        if (game.availableCopies - inCart < maximumToAdd) {
+            maximumToAdd = game.availableCopies - inCart;
+        }
+        if (maximumToAdd <= 0) {
+            ui.error("No more copies of this game are available to add.");
+            return 0;
+        }
 
         while (true) {
-            ui.showSelectQuantityScreen(game, inCart, MAX_COPIES_PER_GAME, maximumToAdd);
+            ui.showSelectQuantityScreen(game, inCart, queued, MAX_COPIES_PER_GAME, maximumToAdd);
             String input = ui.readText(ui.prompt());
 
             if (input.equalsIgnoreCase("C")) {
@@ -440,11 +457,11 @@ public class GameRentalSystem {
                 if (quantity < 1) {
                     ui.error("Quantity must be at least 1.");
                 } else if (quantity > maximumToAdd) {
-                    if (inCart + quantity > MAX_COPIES_PER_GAME) {
+                    if (quantity > MAX_COPIES_PER_GAME - queued - inCart) {
                         ui.error("Maximum rental quantity is " + MAX_COPIES_PER_GAME
-                            + " copies per game. You currently have " + inCart + " in your cart.");
+                            + " copies per game. You have " + queued + " queued and " + inCart + " in your cart.");
                     } else {
-                        ui.error("The request exceeds the per-game quantity limit.");
+                        ui.error("Not enough stock. You may add up to " + maximumToAdd + " more copies.");
                     }
                 } else {
                     return quantity;
@@ -768,7 +785,7 @@ public class GameRentalSystem {
             ui.showQueueRequestRow(checkoutQueue.getPosition(r), r);
         }
         ui.info(ui.tableLine(ConsoleUI.QUEUE_TABLE_WIDTH));
-        ui.waitForEnter();
+        ui.finishScreen();
     }
     void cancelMyRequest(User client) {
         boolean choosingRequest = false;
@@ -777,7 +794,7 @@ public class GameRentalSystem {
             if (myRequests.isEmpty()) {
                 ui.printHeader("CLIENT > QUEUE REQUESTS", "MY QUEUE REQUESTS");
                 ui.showEmptyState("You have no pending queue requests.");
-                ui.waitForEnter();
+                ui.finishScreen();
                 return;
             }
 
@@ -844,7 +861,7 @@ public class GameRentalSystem {
             ui.success("Queue request " + ui.queueLabel(number) + " has been cancelled.");
 
             if (checkoutQueue.getRequestsOf(client).isEmpty()) {
-                ui.waitForEnter(ConsoleUI.QUEUE_TABLE_WIDTH);
+                ui.finishScreen(ConsoleUI.QUEUE_TABLE_WIDTH);
                 return;
             }
             if (!ui.askYesNo("Do you want to cancel another queue request?")) {
@@ -857,7 +874,7 @@ public class GameRentalSystem {
         if (client.rentalHistory.isEmpty()) {
             ui.printHeader("CLIENT > RENTAL HISTORY", "RENTAL HISTORY");
             ui.showEmptyState("You have no rental history yet.");
-            ui.waitForEnter();
+            ui.finishScreen();
             return;
         }
 
@@ -906,7 +923,7 @@ public class GameRentalSystem {
         if (client.isVip()) {
             ui.printHeader("CLIENT > MEMBERSHIP", "VIP MEMBERSHIP");
             ui.showEmptyState("You are already a VIP member.");
-            ui.waitForEnter();
+            ui.finishScreen();
             return;
         }
 
@@ -923,7 +940,7 @@ public class GameRentalSystem {
                 logEvent("Upgraded to VIP: " + client.username);
                 accountService.saveAccounts();
                 ui.success("Upgrade successful! You are now a VIP member.");
-                ui.waitForEnter();
+                ui.finishScreen();
                 return;
             } else if (choice.equalsIgnoreCase("C")) {
                 ui.info("VIP upgrade cancelled. No changes were made.");
@@ -1046,7 +1063,7 @@ public class GameRentalSystem {
             if (choice.equals("0") || choice.equalsIgnoreCase("M")) {
                 if (!session.entries.isEmpty()) {
                     ui.showCheckoutReceipt(session, checkoutQueue);
-                    ui.waitForEnter(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH);
+                    ui.finishScreen(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH);
                 }
                 if (choice.equalsIgnoreCase("M")) {
                     requestDashboardReturn();
@@ -1059,7 +1076,7 @@ public class GameRentalSystem {
             }
             if (choice.equalsIgnoreCase("R")) {
                 ui.showCheckoutReceipt(session, checkoutQueue);
-                ui.waitForEnter(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH);
+                ui.finishScreen(ConsoleUI.CHECKOUT_QUEUE_TABLE_WIDTH);
                 ui.showCheckoutQueue(checkoutQueue, rentalService);
                 continue;
             }
@@ -1268,7 +1285,7 @@ public class GameRentalSystem {
                 if (activeRentals.isEmpty()) {
                     ui.printHeader("RETURNS");
                     ui.showEmptyState("No active rentals.");
-                    ui.waitForEnter();
+                    ui.finishScreen();
                 }
                 return;
             }
@@ -1311,7 +1328,7 @@ public class GameRentalSystem {
         if (rentals.isEmpty()) {
             ui.printHeader("ADMIN > ACTIVE RENTALS", "ACTIVE RENTALS");
             ui.showEmptyState("There are no active rentals.");
-            ui.waitForEnter();
+            ui.finishScreen();
             return;
         }
 
@@ -1366,7 +1383,7 @@ public class GameRentalSystem {
         if (rentals.isEmpty()) {
             ui.printHeader("ADMIN > ACTIVE RENTALS", "OVERDUE RENTALS");
             ui.showEmptyState("There are no overdue rentals.");
-            ui.waitForEnter();
+            ui.finishScreen();
             return;
         }
 
@@ -1417,7 +1434,7 @@ public class GameRentalSystem {
         if (auditLog.isEmpty()) {
             ui.printHeader("ADMIN > AUDIT LOG", "ADMIN AUDIT LOG");
             ui.showEmptyState("No actions have been recorded yet.");
-            ui.waitForEnter();
+            ui.finishScreen();
             return;
         }
 

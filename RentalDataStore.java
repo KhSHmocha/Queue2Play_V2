@@ -159,17 +159,19 @@ class RentalDataStore {
             require((long) game.availableCopies + system.rentalService.rentedCopies(game) <= GameRentalSystem.MAX_GAME_STOCK, "Total game stock exceeds the limit");
         }
         Set<Integer> rentals = new HashSet<>();
-        Set<String> active = new HashSet<>();
+        Set<Rental> active = new HashSet<>();
         for (Rental rental : system.allRentals) {
             require(rental.rentalNumber > 0 && rental.rentalNumber < system.nextRentalNumber && rentals.add(rental.rentalNumber), "Invalid rental number or counter");
             require(system.users.contains(rental.client) && !rental.client.isAdmin(), "Unknown rental client");
-            require(rental.quantity >= 1 && rental.quantity <= GameRentalSystem.MAX_COPIES_PER_GAME && Double.isFinite(rental.amount) && rental.amount >= 0, "Invalid rental amount or quantity");
+            require(rental.quantity >= 1 && rental.quantity <= GameRentalSystem.MAX_SAVED_COPIES_PER_GAME && Double.isFinite(rental.amount) && rental.amount >= 0, "Invalid rental amount or quantity");
             require(rental.checkoutDate != null && rental.dueDate != null && rental.dueDate.isAfter(rental.checkoutDate), "Invalid rental dates");
             require(rental.status.equals("ACTIVE") || rental.status.equals("COMPLETED"), "Invalid rental status");
             require(rental.daysLate >= 0 && Double.isFinite(rental.lateFee) && rental.lateFee >= 0, "Invalid late fee");
             if (rental.status.equals("ACTIVE")) {
                 require(system.games.get(rental.game.gameId) == rental.game && system.activeRentals.contains(rental), "Active rental has no canonical game or heap entry");
-                require(active.add(rental.client.username.toLowerCase(Locale.ROOT) + "|" + rental.game.gameId), "Duplicate active rental");
+                require(active.add(rental), "Duplicate active rental record");
+                require(system.rentalService.activeCopies(rental.client, rental.game) <= GameRentalSystem.MAX_SAVED_COPIES_PER_GAME,
+                    "Active client/game quantity exceeds the limit");
                 require(rental.returnDate == null && rental.daysLate == 0 && rental.lateFee == 0, "Active rental has return fields");
             } else {
                 require(!system.activeRentals.contains(rental), "Completed rental is still active");
@@ -177,13 +179,13 @@ class RentalDataStore {
         }
         require(system.activeRentals.size() == active.size(), "Active rental heap differs from rental records");
         Set<Integer> numbers = new HashSet<>();
-        Set<String> pending = new HashSet<>();
         for (RentalRequest request : system.checkoutQueue.getRequests()) {
             require(CheckoutQueue.validRequest(request) && request.queueNumber < system.nextQueueNumber && numbers.add(request.queueNumber), "Invalid request or queue counter");
             require(system.games.get(request.game.gameId) == request.game && system.users.contains(request.client), "Unknown request client or game");
             require(request.vip == request.client.isVip(), "Request membership is stale");
-            require(pending.add(request.client.username.toLowerCase(Locale.ROOT) + "|" + request.game.gameId)
-                && !system.rentalService.hasActiveRental(request.client, request.game), "Duplicate pending/active request");
+            require(system.checkoutQueue.queuedCopies(request.client, request.game)
+                + system.rentalService.activeCopies(request.client, request.game) <= GameRentalSystem.MAX_SAVED_COPIES_PER_GAME,
+                "Queued and active client/game quantity exceeds the limit");
         }
     }
 
@@ -259,7 +261,7 @@ class RentalDataStore {
                 if (fields.length >= 10) {
                     quantity = Integer.parseInt(fields[9]);
                 }
-                require(quantity >= 1 && quantity <= GameRentalSystem.MAX_COPIES_PER_GAME, "Invalid rental quantity");
+                require(quantity >= 1 && quantity <= GameRentalSystem.MAX_SAVED_COPIES_PER_GAME, "Invalid rental quantity");
                 Rental rental = new Rental(number, client, game, checkout, due, amount);
                 rental.quantity = quantity;
                 rental.status = fields[8];
@@ -280,7 +282,8 @@ class RentalDataStore {
                     }
                 }
                 if (rental.status.equals("ACTIVE")) {
-                    require(!system.rentalService.hasActiveRental(client, game), "Duplicate active client/game rental");
+                    require(system.rentalService.activeCopies(client, game) <= GameRentalSystem.MAX_SAVED_COPIES_PER_GAME - quantity,
+                        "Active client/game quantity exceeds the limit");
                     system.activeRentals.add(rental);
                 }
                 system.allRentals.add(rental);
@@ -346,10 +349,13 @@ class RentalDataStore {
                     request.quantity = Integer.parseInt(fields[5]);
                 }
                 require(CheckoutQueue.validRequest(request), "Request duration or quantity is outside the limits");
-                require(!system.rentalService.hasActiveRental(client, game), "Request conflicts with an active rental");
+                int copies = system.rentalService.activeCopies(client, game) + request.quantity;
                 for (RentalRequest existing : requests) {
-                    require(existing.client != client || existing.game != game, "Duplicate client/game request");
+                    if (RentalService.sameUser(existing.client, client) && RentalService.sameGame(existing.game, game)) {
+                        copies += existing.quantity;
+                    }
                 }
+                require(copies <= GameRentalSystem.MAX_SAVED_COPIES_PER_GAME, "Queued and active client/game quantity exceeds the limit");
                 requests.add(request);
                 system.nextQueueNumber = Math.max(system.nextQueueNumber, number + 1);
             } catch (IllegalArgumentException e) {

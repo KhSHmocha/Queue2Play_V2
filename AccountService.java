@@ -4,6 +4,9 @@ class AccountService {
     private final ArrayList<User> users;
     private final ConsoleUI ui;
     private final RentalDataStore dataStore;
+    // This counter belongs to the running application, not one login screen.
+    private int failedLoginAttempts;
+    private final String unknownPasswordHash = Passwords.hashPlaintext("Unknown account");
 
     AccountService(ArrayList<User> users, ConsoleUI ui, RentalDataStore dataStore) {
         this.users = users;
@@ -21,6 +24,68 @@ class AccountService {
 
     static boolean validEmail(String value) {
         return value != null && value.length() <= 254 && value.matches("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
+    }
+
+    // Keep the older validators above for saved accounts. New accounts use these rules.
+    static boolean validRegistrationName(String value) {
+        if (value == null || value.length() < 5 || value.length() > 60) {
+            return false;
+        }
+        int letters = 0;
+        for (int i = 0; i < value.length(); i++) {
+            char character = value.charAt(i);
+            if (Character.isLetter(character)) {
+                letters++;
+            } else if (character != ' ' && character != '.') {
+                return false;
+            }
+        }
+        return letters >= 2 && Character.isLetter(value.charAt(0));
+    }
+
+    static boolean validRegistrationUsername(String value) {
+        if (value == null || !value.matches("[A-Za-z0-9_.-]{3,20}")) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            if (Character.isLetter(value.charAt(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static boolean validRegistrationEmail(String value) {
+        if (!validEmail(value) || value.length() > 100) {
+            return false;
+        }
+        int at = value.indexOf('@');
+        String local = value.substring(0, at);
+        String domain = value.substring(at + 1);
+        if (local.startsWith(".") || local.endsWith(".") || value.contains("..")) {
+            return false;
+        }
+        String[] labels = domain.split("\\.", -1);
+        for (String label : labels) {
+            if (label.isEmpty() || label.length() > 63 || label.startsWith("-") || label.endsWith("-")) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static boolean validRegistrationPassword(String value) {
+        if (value == null || value.length() < 8 || value.length() > 20) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char character = value.charAt(i);
+            if (character == '|' || Character.isWhitespace(character)
+                    || Character.isSpaceChar(character) || Character.isISOControl(character)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private boolean embeddedAccountsChanged;
@@ -114,221 +179,198 @@ class AccountService {
         return findUserByLogin(email) != null;
     }
 
+    private boolean cancelRegistration() {
+        if (ui.confirmRegistrationCancellation()) {
+            ui.info("Registration cancelled. No account was created.");
+            return true;
+        }
+        return false;
+    }
+
     void register() {
         String fullName = "";
         String username = "";
         String email = "";
         String password = "";
+        String pendingPassword = "";
         int step = 1;
+        boolean editing = false;
         while (true) {
-            if (step == 1) {
-                ui.clearScreen();
-                ui.showRegisterFullNameScreen();
-                String value = ui.readText(ui.prompt());
-                if (value.equals("0")) {
+            ui.clearScreen();
+            if (step == 6) {
+                ui.showRegistrationConfirmation(fullName, username, email);
+                ui.inputBar("ENTER CHOICE");
+                String choice = ui.readText(ui.prompt()).trim();
+                if (choice.equals("1")) {
+                    break;
+                }
+                if (choice.equalsIgnoreCase("E")) {
+                    step = 7;
+                } else if (choice.equalsIgnoreCase("C")) {
+                    if (cancelRegistration()) {
+                        return;
+                    }
+                } else {
+                    ui.error("Use 1 to create, E to edit, or C to cancel.");
+                }
+                continue;
+            }
+            if (step == 7) {
+                ui.showRegistrationEditMenu(fullName, username, email);
+                String choice = ui.readText(ui.prompt()).trim();
+                if (choice.equalsIgnoreCase("B")) {
+                    step = 6;
+                } else if (choice.equals("1") || choice.equals("2")
+                        || choice.equals("3") || choice.equals("4")) {
+                    step = Integer.parseInt(choice);
+                    editing = true;
+                } else {
+                    ui.error("Choose 1, 2, 3, 4, or B to return to the summary.");
+                }
+                continue;
+            }
+
+            ui.showRegistrationStep(step, editing, fullName, username, email);
+            String value;
+            if (step == 4 || step == 5) {
+                value = ui.readPassword(ui.prompt());
+            } else {
+                value = ui.readText(ui.prompt()).trim();
+            }
+            if (step == 1 && !editing && value.equals("0")) {
+                return;
+            }
+            if ((step > 1 || editing) && value.equalsIgnoreCase("C")) {
+                if (cancelRegistration()) {
                     return;
                 }
-                if (!validName(value)) {
+                continue;
+            }
+            if ((step > 1 || editing) && value.equalsIgnoreCase("B")) {
+                if (step == 5) {
+                    step = 4;
+                } else if (editing) {
+                    step = 7;
+                    editing = false;
+                } else {
+                    step--;
+                }
+                continue;
+            }
+            if (step == 1) {
+                if (!validRegistrationName(value)) {
                     ui.showFullNameInstructions();
-                    ui.waitForEnter();
                     continue;
                 }
                 fullName = value;
-                step = 2;
             } else if (step == 2) {
-                ui.clearScreen();
-                ui.showRegisterUsernameScreen(fullName);
-                String value = ui.readText(ui.prompt());
-                if (value.equalsIgnoreCase("C")) {
-                    if (ui.askYesNo("Cancel registration and discard the entered information?")) {
-                        ui.info("Registration cancelled. No account was created.");
-                        return;
-                    }
-                    continue;
-                }
-                if (value.equals("0")) {
-                    step = 1;
-                    continue;
-                }
-                if (value.isEmpty()) {
-                    ui.error("Username cannot be empty.");
-                    ui.waitForEnter();
-                    continue;
-                }
-                if (!validUsername(value)) {
-                    ui.error("Use 3-32 letters, numbers, dots, underscores or hyphens.");
-                    ui.waitForEnter();
+                if (!validRegistrationUsername(value)) {
+                    ui.error("Use 3-20 letters, digits, dots, underscores or hyphens, with at least one letter.");
                     continue;
                 }
                 if (findUserByLogin(value) != null) {
                     ui.error("Username is already taken. Please try another one.");
-                    ui.waitForEnter();
                     continue;
                 }
                 username = value;
-                step = 3;
             } else if (step == 3) {
-                ui.clearScreen();
-                ui.showRegisterEmailScreen(fullName, username);
-                String value = ui.readText(ui.prompt());
-                if (value.equalsIgnoreCase("C")) {
-                    if (ui.askYesNo("Cancel registration and discard the entered information?")) {
-                        ui.info("Registration cancelled. No account was created.");
-                        return;
-                    }
-                    continue;
-                }
-                if (value.equals("0")) {
-                    step = 2;
-                    continue;
-                }
-                if (value.isEmpty()) {
-                    ui.error("Email cannot be empty.");
-                    ui.waitForEnter();
-                    continue;
-                }
-                if (!validEmail(value)) {
-                    ui.error("Invalid email format. Example: juan@gmail.com");
-                    ui.waitForEnter();
+                if (!validRegistrationEmail(value)) {
+                    ui.error("Enter a valid email of at most 100 characters. Example: juan@gmail.com");
                     continue;
                 }
                 if (emailExists(value)) {
                     ui.error("Email is already registered. Please use another email.");
-                    ui.waitForEnter();
                     continue;
                 }
                 email = value;
-                step = 4;
             } else if (step == 4) {
-                ui.clearScreen();
-                ui.showRegisterPasswordScreen(fullName, username, email);
-                String value = ui.readPassword(ui.prompt());
-                if (value.equalsIgnoreCase("C")) {
-                    if (ui.askYesNo("Cancel registration and discard the entered information?")) {
-                        ui.info("Registration cancelled. No account was created.");
-                        return;
-                    }
+                if (!validRegistrationPassword(value)) {
+                    ui.error("Use 8-20 characters without whitespace, control characters or |.");
                     continue;
                 }
-                if (value.equals("0")) {
-                    step = 3;
-                    continue;
-                }
-                if (value.length() < 8) {
-                    ui.error("Password must be at least 8 characters.");
-                    ui.waitForEnter();
-                    continue;
-                }
-                if (value.contains("|")) {
-                    ui.error("Password cannot contain the | symbol.");
-                    ui.waitForEnter();
-                    continue;
-                }
-                password = value;
+                // Retain the previously confirmed password until the replacement is confirmed.
+                pendingPassword = value;
                 step = 5;
-            } else if (step == 5) {
-                ui.printHeader("CREATE ACCOUNT", "CONFIRM PASSWORD");
-                ui.showConfirmPasswordPrompt();
-                ui.inputBar("CONFIRM PASSWORD");
-                String confirm = ui.readPassword(ui.prompt());
-                if (confirm.equalsIgnoreCase("C")) {
-                    if (ui.askYesNo("Cancel registration and discard the entered information?")) {
-                        ui.info("Registration cancelled. No account was created.");
-                        return;
-                    }
-                    continue;
-                }
-                if (confirm.equals("0")) {
-                    step = 4;
-                    continue;
-                }
-                if (!confirm.equals(password)) {
-                    ui.error("Passwords do not match. Please try again.");
-                    ui.waitForEnter();
-                    continue;
-                }
-                step = 6;
+                continue;
             } else {
-                ui.clearScreen();
-                ui.showRegistrationConfirmation(fullName, username, email);
-                ui.inputBar("ENTER CHOICE");
-                String choice = ui.readText(ui.prompt());
-                if (choice.equals("1")) {
-                    break;
-                }
-                if (choice.equals("0")) {
-                    step = 5;
+                if (!value.equals(pendingPassword)) {
+                    ui.error("Passwords do not match. Please try again.");
                     continue;
                 }
-                if (choice.equals("2")) {
-                    step = 1;
-                    continue;
-                }
-                if (choice.equalsIgnoreCase("C")) {
-                    ui.info("Registration cancelled. No account was created.");
-                    return;
-                }
-                ui.error("Invalid choice. Please enter 1, 2, 0, or C.");
-                ui.waitForEnter();
+                password = pendingPassword;
+            }
+            if (editing || step == 5) {
+                step = 6;
+                editing = false;
+            } else {
+                step++;
             }
         }
-        // Finalized only after confirmation.
         ui.loading("Creating account");
         users.add(new User(username, fullName, email, Passwords.hashPlaintext(password), "CLIENT", "REGULAR"));
         dataStore.writeLog("EVENT", "Registered account: " + username);
         saveAccounts();
         ui.clearScreen();
         ui.showAccountCreated();
-        ui.waitForEnter();
+        ui.finishScreen();
+    }
+
+    private void failedLogin(String login) {
+        failedLoginAttempts++;
+        ui.error("Incorrect username/email or password.");
+        if (failedLoginAttempts % 3 == 0) {
+            ui.showLoginCooldown();
+        }
+        dataStore.writeLog("EVENT", "Failed login attempt for account: "
+                + login.replaceAll("[\\p{Cntrl}|]", "?"));
+        dataStore.saveData();
     }
 
     User login() {
         while (true) {
             ui.clearScreen();
             ui.showLoginUsernameScreen();
-            String login = ui.readText(ui.prompt());
+            String login = ui.readText(ui.prompt()).trim();
             if (login.equals("0")) {
                 return null;
             }
             if (login.isEmpty()) {
                 ui.error("Username or email cannot be empty.");
-                ui.waitForEnter();
                 continue;
             }
             User user = findUserByLogin(login);
-            if (user == null) {
-                dataStore.writeLog("EVENT", "Failed login attempt for account: " + login.replaceAll("[\\p{Cntrl}|]", "?"));
-                dataStore.saveData();
-                ui.error("Username or email was not found.");
-                ui.waitForEnter();
-                continue;
-            }
-            boolean backToLoginName = false;
             while (true) {
                 ui.clearScreen();
-                ui.showLoginPasswordScreen(user.username);
+                // Show the supplied identifier for every account, including unknown ones.
+                ui.showLoginPasswordScreen(login);
                 String password = ui.readPassword(ui.prompt());
                 if (password.equals("0")) {
-                    backToLoginName = true;
+                    return null;
+                }
+                if (password.equalsIgnoreCase("B")) {
                     break;
                 }
+                if (password.isEmpty()) {
+                    ui.error("Password cannot be empty.");
+                    continue;
+                }
                 ui.loading("Verifying account");
-                if (!Passwords.matches(password, user.password)) {
-                    dataStore.writeLog("EVENT", "Incorrect password attempt for: " + user.username);
-                    dataStore.saveData();
-                    ui.error("Incorrect password. Please try again.");
-                    ui.waitForEnter();
+                String storedPassword = unknownPasswordHash;
+                if (user != null) {
+                    storedPassword = user.password;
+                }
+                boolean matches = Passwords.matches(password, storedPassword);
+                if (user == null || !matches) {
+                    failedLogin(login);
                     continue;
                 }
                 dataStore.writeLog("EVENT", "Login: " + user.username + " (" + user.role + ")");
                 dataStore.saveData();
+                failedLoginAttempts = 0;
                 ui.success("LOGIN SUCCESSFUL - Welcome, " + user.fullName + "!");
                 ui.pause(500);
                 ui.loading("Loading dashboard");
                 return user;
-            }
-            if (!backToLoginName) {
-                return null;
             }
         }
     }

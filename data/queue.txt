@@ -1,4 +1,6 @@
-#COUNTERS|15|1
+#COUNTERS|18|2
 # QUEUE #|USERNAME|GAME ID|VIP|RENTAL DAYS|QUANTITY
-14|alex|X001|true|1|5
 2|juan|P002|false|1|5
+15|juan|P001|false|1|1
+16|juan|P001|false|3|2
+17|juan|P001|false|7|2
